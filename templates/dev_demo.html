@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}رابط الديمو المؤقت{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🔗 رابط الديمو المؤقت</h1>
+  <a href="{{ url_for('dev_dashboard') }}" class="btn-link">⬅️ لوحة المطور</a>
+</div>
+
+<div class="card">
+  <h3>الحالة الحالية</h3>
+  {% if cfg.enabled and cfg.token %}
+    <p>✅ <span class="badge ok">مفعّل</span> — أنشئ بتاريخ <b>{{ cfg.created_at }}</b></p>
+    <div class="info-grid">
+      <div><span>الدور:</span> <b>{{ cfg.role }}</b></div>
+      <div><span>المدرسة:</span> <b>{{ cfg.school_id or 'يختار الضيف' }}</b></div>
+      <div><span>ملاحظة:</span> <b>{{ cfg.note or '—' }}</b></div>
+    </div>
+
+    <h4 style="margin-top:15px;">الرابط (انسخه وأرسله):</h4>
+    <div class="demo-url-box">
+      <input id="demo-url" type="text" value="{{ demo_url }}" readonly onclick="this.select()">
+      <button type="button" class="btn-primary" onclick="copyDemoUrl()">📋 نسخ</button>
+    </div>
+    <p class="hint">⚠️ أي شخص لديه هذا الرابط يستطيع الدخول للنظام بصلاحية <b>{{ cfg.role }}</b> دون كلمة مرور.</p>
+
+    <form method="post" style="margin-top:15px; display:flex; gap:10px;">
+      <input type="hidden" name="action" value="disable">
+      <button class="btn-danger" onclick="return confirm('إيقاف الرابط المؤقت؟ سيتعطّل فوراً.');">⛔ إيقاف الرابط</button>
+    </form>
+    <form method="post" style="margin-top:8px;">
+      <input type="hidden" name="action" value="delete">
+      <button class="btn-link" onclick="return confirm('حذف نهائي؟');">🗑️ حذف نهائي</button>
+    </form>
+  {% else %}
+    <p>⭕ <span class="badge">معطّل</span> — الرابط الأساسي يعمل بشكل طبيعي.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>{% if cfg.enabled %}🔄 إعادة إنشاء برابط جديد{% else %}➕ إنشاء رابط ديمو{% endif %}</h3>
+  <form method="post" class="form-row">
+    <input type="hidden" name="action" value="enable">
+    <select name="role">
+      <option value="teacher">أستاذ (محدود)</option>
+      <option value="admin">مدير (صلاحيات كاملة)</option>
+    </select>
+    <select name="school_id">
+      <option value="">— يختار الضيف المدرسة —</option>
+      {% for s in schools %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+    </select>
+    <input name="note" placeholder="ملاحظة (لمن أرسلت الرابط؟)" style="flex:1;">
+    <button class="btn-primary">🔗 إنشاء رابط جديد</button>
+  </form>
+  <p class="hint">💡 الرابط يبقى فعّالاً حتى تضغط <b>إيقاف الرابط</b>. الرابط الأساسي <code>/login</code> يعمل دائماً.</p>
+</div>
+
+<script>
+function copyDemoUrl() {
+  const inp = document.getElementById('demo-url');
+  inp.select();
+  navigator.clipboard.writeText(inp.value).then(() => {
+    alert('✓ تم نسخ الرابط');
+  }).catch(() => {
+    document.execCommand('copy');
+    alert('✓ تم نسخ الرابط');
+  });
+}
+</script>
+
+<style>
+.demo-url-box { display:flex; gap:8px; align-items:center; margin-top:8px; }
+.demo-url-box input { flex:1; background:#0f172a; color:#22c55e; font-family:monospace; font-size:13px; padding:10px; border-radius:8px; border:1px solid #16a34a; direction:ltr; }
+</style>
+{% endblock %}

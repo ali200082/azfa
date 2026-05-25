@@ -407,6 +407,7 @@ def inject_globals():
         "assigned_groups": session.get("assigned_groups", []),
         "lang": session.get("lang", "ar"),
         "t": _t,
+        "is_demo": session.get("is_demo", False),
     }
 
 
@@ -1334,9 +1335,6 @@ def dev_dashboard():
     return render_template("dev_dashboard.html", schools=schools)
 
 
-# ════════════════════════════════════════════════════════════════════
-# 🟢 عرض كل المستخدمين وكلمات المرور (للمطور فقط)
-# ════════════════════════════════════════════════════════════════════
 @app.route("/dev/users")
 @developer_required
 def dev_users():
@@ -1366,6 +1364,82 @@ def dev_users():
                 })
     rows.sort(key=lambda r: (str(r["school_name"]), str(r["username"])))
     return render_template("dev_users.html", rows=rows)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 رابط الديمو المؤقت (يتحكّم به المطوّر فقط)
+# ════════════════════════════════════════════════════════════════════
+import secrets
+
+
+def _get_demo_config():
+    cfg = fb_get("demo_access") or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    return cfg
+
+
+@app.route("/dev/demo", methods=["GET", "POST"])
+@developer_required
+def dev_demo():
+    cfg = _get_demo_config()
+    schools_list = list_schools()
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "enable":
+            token = secrets.token_urlsafe(12)
+            role = request.form.get("role", "teacher")
+            school_id = request.form.get("school_id", "").strip()
+            note = request.form.get("note", "").strip()
+            cfg = {
+                "enabled": True,
+                "token": token,
+                "role": role if role in ("admin", "teacher") else "teacher",
+                "school_id": school_id,
+                "note": note,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "created_by": session.get("username", ""),
+            }
+            fb_put("demo_access", cfg)
+            flash("✓ تم إنشاء رابط الديمو", "success")
+        elif action == "disable":
+            fb_put("demo_access", {"enabled": False})
+            flash("✓ تم إيقاف رابط الديمو — الرابط الأساسي يعمل كالمعتاد", "success")
+        elif action == "delete":
+            fb_delete("demo_access")
+            flash("✓ تم حذف رابط الديمو نهائياً", "success")
+        return redirect(url_for("dev_demo"))
+
+    demo_url = ""
+    if cfg.get("enabled") and cfg.get("token"):
+        demo_url = url_for("demo_access", token=cfg["token"], _external=True)
+    return render_template("dev_demo.html", cfg=cfg, demo_url=demo_url, schools=schools_list)
+
+
+@app.route("/demo/<token>")
+def demo_access(token):
+    """دخول مؤقت عبر رابط الديمو — لا يحتاج اسم مستخدم/كلمة مرور."""
+    cfg = _get_demo_config()
+    if not cfg.get("enabled") or cfg.get("token") != token:
+        return render_template("demo_expired.html"), 403
+
+    role = cfg.get("role", "teacher")
+    school_id = cfg.get("school_id", "")
+
+    session.clear()
+    session["username"] = "ضيف_تجريبي"
+    session["role"] = role
+    session["is_developer"] = False
+    session["is_demo"] = True
+    if school_id:
+        session["school_id"] = school_id
+    session["assigned_level"] = ""
+    session["assigned_groups"] = []
+    flash("👋 مرحباً بك في النسخة التجريبية — هذا حساب ضيف مؤقت", "success")
+    if school_id:
+        return redirect(url_for("index"))
+    return redirect(url_for("schools_page"))
 
 
 if __name__ == "__main__":
