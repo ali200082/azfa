@@ -39,7 +39,9 @@
     <nav>
       <a href="{{ url_for('index') }}" class="menu-item">📋 <span>قائمة الطلاب</span></a>
       {% if current_school %}
-        <a href="{{ url_for('new_student') }}" class="menu-item">➕ <span>إضافة طالب</span></a>
+        {% if can_modify_students %}
+          <a href="{{ url_for('new_student') }}" class="menu-item">➕ <span>إضافة طالب</span></a>
+        {% endif %}
         <a href="{{ url_for('attendance_page') }}" class="menu-item">✅ <span>تسجيل الحضور</span></a>
         <a href="{{ url_for('grades_page') }}" class="menu-item">📊 <span>إدخال الدرجات</span></a>
         <a href="{{ url_for('reports_page') }}" class="menu-item">📄 <span>التقارير</span></a>

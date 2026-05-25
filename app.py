@@ -60,6 +60,61 @@ def developer_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+
+def _is_admin():
+    """المدير أو المطور."""
+    return session.get("role") == "admin" or session.get("is_developer")
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("username"):
+            return redirect(url_for("login"))
+        if not _is_admin():
+            flash("هذه الصلاحية للمدير فقط", "error")
+            return redirect(url_for("index"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def _user_scope():
+    """يرجع (assigned_level, assigned_groups) للأستاذ.
+    المدير/المطور: ('' , []) أي لا قيود."""
+    if _is_admin():
+        return "", []
+    return (
+        str(session.get("assigned_level", "") or ""),
+        list(session.get("assigned_groups", []) or []),
+    )
+
+
+def _filter_by_scope(students):
+    """يقصر القائمة على المستوى/الكروبات المسموحة للأستاذ.
+    المدير لا يتأثر."""
+    if _is_admin():
+        return students
+    lvl, grps = _user_scope()
+    out = students
+    if lvl:
+        out = [s for s in out if str(s.get("المستوى", "")) == lvl]
+    if grps:
+        out = [s for s in out if str(s.get("الكروب", "")) in grps]
+    return out
+
+
+def _can_access_student(student):
+    if _is_admin():
+        return True
+    if not isinstance(student, dict):
+        return False
+    lvl, grps = _user_scope()
+    if lvl and str(student.get("المستوى", "")) != lvl:
+        return False
+    if grps and str(student.get("الكروب", "")) not in grps:
+        return False
+    return True
+
 # ────────────── حقول الطالب ──────────────
 STUDENT_FIELDS = [
     ("الكود", "text"),
@@ -257,6 +312,10 @@ def inject_globals():
         "current_user": session.get("username"),
         "current_role": session.get("role"),
         "is_developer": session.get("is_developer", False),
+        "is_admin": _is_admin(),
+        "can_modify_students": _is_admin(),
+        "assigned_level": session.get("assigned_level", ""),
+        "assigned_groups": session.get("assigned_groups", []),
     }
 
 
@@ -306,11 +365,16 @@ def login():
         # 2) حسابات السحابة (من schools/<id>/users_info)
         school_id, role = cloud_authenticate(username, password)
         if school_id:
+            # نقرأ صلاحيات الأستاذ (مستوى/كروبات معينة)
+            user_info = fb_get(f"schools/{school_id}/users_info/{username}") or {}
             session.clear()
             session["username"] = username
             session["role"] = role
             session["is_developer"] = False
             session["school_id"] = school_id
+            session["assigned_level"] = str(user_info.get("assigned_level", "") or "")
+            ag = user_info.get("assigned_groups", [])
+            session["assigned_groups"] = list(ag) if isinstance(ag, list) else []
             flash(f"مرحباً {username} 👋", "success")
             return redirect(request.args.get("next") or url_for("index"))
 
@@ -352,6 +416,7 @@ def index():
     group = request.args.get("group", "").strip()
 
     all_students = load_students(school_id)
+    all_students = _filter_by_scope(all_students)
     students = all_students
 
     if q:
@@ -396,6 +461,7 @@ def select_school(school_id):
 
 @app.route("/student/new", methods=["GET", "POST"])
 @login_required
+@admin_required
 def new_student():
     school_id = current_school_id()
     if not school_id:
@@ -419,6 +485,7 @@ def new_student():
 
 @app.route("/student/<sid>/edit", methods=["GET", "POST"])
 @login_required
+@admin_required
 def edit_student(sid):
     school_id = current_school_id()
     if not school_id:
@@ -438,6 +505,7 @@ def edit_student(sid):
 
 @app.route("/student/<sid>/delete", methods=["POST"])
 @login_required
+@admin_required
 def remove_student(sid):
     school_id = current_school_id()
     if not school_id:
@@ -459,6 +527,9 @@ def view_student(sid):
     if not student:
         flash("الطالب غير موجود", "error")
         return redirect(url_for("index"))
+    if not _can_access_student(student):
+        flash("لا تملك صلاحية لعرض هذا الطالب", "error")
+        return redirect(url_for("index"))
     student["_total"] = _calc_total(student)
     return render_template("view.html", student=student, fields=STUDENT_FIELDS)
 
@@ -469,7 +540,7 @@ def api_students():
     school_id = current_school_id()
     if not school_id:
         return jsonify([])
-    return jsonify(load_students(school_id))
+    return jsonify(_filter_by_scope(load_students(school_id)))
 
 
 @app.route("/api/schools")
@@ -507,6 +578,7 @@ def attendance_page():
         return redirect(url_for("schools_page"))
 
     all_students = load_students(school_id)
+    all_students = _filter_by_scope(all_students)
     levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
 
@@ -533,6 +605,8 @@ def attendance_page():
             for sid in student_ids:
                 stu = get_student(school_id, sid)
                 if not stu:
+                    continue
+                if not _can_access_student(stu):
                     continue
                 log = stu.get("سجل_الحضور", [])
                 if not isinstance(log, list):
@@ -563,6 +637,7 @@ def attendance_page():
 
         # تحديث القائمة بعد التسجيل
         all_students = load_students(school_id)
+        all_students = _filter_by_scope(all_students)
         filtered = all_students
         if sel_level:
             filtered = [s for s in filtered if str(s.get("المستوى", "")) == sel_level]
@@ -663,6 +738,7 @@ def reports_page():
     group = request.args.get("group", "").strip()
 
     all_students = load_students(school_id)
+    all_students = _filter_by_scope(all_students)
     students = list(all_students)
     if q:
         ql = q.lower()
@@ -711,6 +787,7 @@ def reports_export():
     group = request.args.get("group", "").strip()
 
     students = load_students(school_id)
+    students = _filter_by_scope(students)
     if q:
         ql = q.lower()
         students = [s for s in students if ql in str(s.get("الاسم", "")).lower()]
@@ -778,6 +855,9 @@ def student_report(sid):
     if not student:
         flash("الطالب غير موجود", "error")
         return redirect(url_for("reports_page"))
+    if not _can_access_student(student):
+        flash("لا تملك صلاحية لعرض هذا الطالب", "error")
+        return redirect(url_for("reports_page"))
 
     student["_total"] = _calc_total(student)
     student["_result"] = "ناجح" if student["_total"] >= 60 else "راسب"
@@ -802,6 +882,7 @@ def exam_halls():
         return redirect(url_for("schools_page"))
 
     all_students = load_students(school_id)
+    all_students = _filter_by_scope(all_students)
     levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
 
@@ -838,16 +919,10 @@ def exam_halls():
 # ════════════════════════════════════════════════════════════════════
 # 🟢 إدارة الأساتذة (مدير المدرسة فقط)
 # ════════════════════════════════════════════════════════════════════
-def _is_admin():
-    return session.get("role") == "admin" or session.get("is_developer")
-
-
 @app.route("/teachers", methods=["GET", "POST"])
 @login_required
+@admin_required
 def teachers_page():
-    if not _is_admin():
-        flash("هذه الصفحة للمديرين فقط", "error")
-        return redirect(url_for("index"))
     school_id = current_school_id()
     if not school_id:
         return redirect(url_for("schools_page"))
