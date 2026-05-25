@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}كلمات المرور — كل المستخدمين{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🔐 كل المستخدمين وكلمات المرور</h1>
+  <span class="badge-info">👑 للمطور فقط</span>
+</div>
+
+<div class="card">
+  <p class="muted">
+    ⚠️ هذه الصفحة تعرض كلمات المرور بنص واضح للحسابات التي تم إنشاؤها أو إعادة تعيينها بعد تحديث النظام.
+    الحسابات القديمة تم تخزينها كـ SHA256 ولا يمكن استرجاعها — قم بإعادة تعيين كلمة المرور لرؤيتها.
+  </p>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>الجامعة</th>
+          <th>المستخدم</th>
+          <th>الدور</th>
+          <th>كلمة المرور</th>
+          <th>المستوى</th>
+          <th>الكروبات</th>
+          <th>أنشئ في</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><b>{{ r.school_name }}</b><br><small class="muted">{{ r.school_id }}</small></td>
+          <td><code>{{ r.username }}</code></td>
+          <td>
+            <span class="badge {% if r.role == 'admin' %}ok{% endif %}">
+              {{ '🛡️ مدير' if r.role == 'admin' else '👤 أستاذ' }}
+            </span>
+          </td>
+          <td>
+            {% if r.has_plain %}
+              <code class="pwd-show">{{ r.password }}</code>
+            {% else %}
+              <span class="muted">🔒 غير متاحة (مشفّرة قديماً)</span>
+            {% endif %}
+          </td>
+          <td>{{ r.assigned_level or '—' }}</td>
+          <td>{{ r.assigned_groups|join(', ') if r.assigned_groups else '—' }}</td>
+          <td><small>{{ r.created_at or '—' }}</small></td>
+        </tr>
+        {% endfor %}
+        {% if not rows %}
+        <tr><td colspan="7" class="empty">لا يوجد مستخدمون</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <a href="{{ url_for('dev_dashboard') }}" class="btn-link">← العودة للوحة المطور</a>
+</div>
+{% endblock %}

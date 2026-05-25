@@ -1,25 +1,46 @@
 {% extends "base.html" %}
-{% block title %}تسجيل الحضور{% endblock %}
+{% block title %}{{ t('attendance') }}{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>✅ تسجيل الحضور والغياب</h1>
+  <h1>✅ {{ t('attendance') }}</h1>
   <span class="badge-info">📅 {{ today }}</span>
 </div>
 
-<form method="get" class="filters-bar">
-  <select name="level">
-    <option value="">كل المستويات</option>
-    {% for l in levels %}<option value="{{ l }}" {% if l==sel_level %}selected{% endif %}>{{ l }}</option>{% endfor %}
-  </select>
-  <select name="group">
-    <option value="">كل الكروبات</option>
-    {% for g in groups %}<option value="{{ g }}" {% if g==sel_group %}selected{% endif %}>{{ g }}</option>{% endfor %}
-  </select>
-  <button class="btn-primary">🔍 عرض الطلاب</button>
+<form method="get" class="card">
+  <div class="form-row">
+    <label style="flex:1">
+      📚 {{ t('level') }}
+      <select name="level">
+        <option value="">{{ t('all_levels') }}</option>
+        {% for l in levels %}<option value="{{ l }}" {% if l==sel_level %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+
+  {% if groups %}
+  <div class="groups-pick">
+    <div class="groups-pick-title">👥 {{ t('groups') }} <small class="muted">(يمكن اختيار أكثر من كروب)</small></div>
+    <div class="checks-row">
+      {% for g in groups %}
+      <label class="check-pill">
+        <input type="checkbox" name="groups" value="{{ g }}" {% if g in sel_groups %}checked{% endif %}>
+        <span>{{ g }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="form-actions">
+    <button class="btn-primary">{{ t('show_students') }}</button>
+    {% if sel_level or sel_groups %}
+      <a href="{{ url_for('attendance_page') }}" class="btn-link">مسح</a>
+    {% endif %}
+  </div>
 </form>
 
 {% if students %}
-<div class="att-summary">عدد الطلاب غير المسجلين اليوم: <b>{{ students|length }}</b></div>
+<div class="att-summary">{{ t('unrecorded_today') }}: <b>{{ students|length }}</b></div>
 
 <div class="students-list">
   {% for s in students %}
@@ -30,21 +51,21 @@
         <span>🎫 {{ s.get('الكود', '') }}</span>
         <span>📚 {{ s.get('المستوى', '') }}</span>
         <span>👥 {{ s.get('الكروب', '') }}</span>
-        <span>❌ غياب سابق: {{ s.get('غياب', 0) }}</span>
+        <span>❌ {{ t('prior_absences') }}: {{ s.get('غياب', 0) }}</span>
       </div>
     </div>
     <div class="student-actions">
       <form method="post" class="inline-form">
         <input type="hidden" name="level" value="{{ sel_level }}">
-        <input type="hidden" name="group" value="{{ sel_group }}">
+        {% for g in sel_groups %}<input type="hidden" name="groups" value="{{ g }}">{% endfor %}
         <input type="hidden" name="students" value="{{ s.id }}">
-        <button type="submit" name="action" value="present" class="btn-success btn-att">✅ حاضر</button>
+        <button type="submit" name="action" value="present" class="btn-success btn-att">✅ {{ t('present') }}</button>
       </form>
       <form method="post" class="inline-form">
         <input type="hidden" name="level" value="{{ sel_level }}">
-        <input type="hidden" name="group" value="{{ sel_group }}">
+        {% for g in sel_groups %}<input type="hidden" name="groups" value="{{ g }}">{% endfor %}
         <input type="hidden" name="students" value="{{ s.id }}">
-        <button type="submit" name="action" value="absent" class="btn-danger btn-att">❌ غائب</button>
+        <button type="submit" name="action" value="absent" class="btn-danger btn-att">❌ {{ t('absent') }}</button>
       </form>
     </div>
   </div>
@@ -52,10 +73,10 @@
 </div>
 {% else %}
 <div class="empty">
-  {% if sel_level or sel_group %}
-    ✓ تم تسجيل جميع الطلاب اليوم في هذا المستوى/الكروب
+  {% if sel_level or sel_groups %}
+    ✓ {{ t('all_recorded') }}
   {% else %}
-    اختر المستوى أو الكروب ثم اضغط <b>عرض الطلاب</b>
+    {{ t('select_filter_hint') }}
   {% endif %}
 </div>
 {% endif %}

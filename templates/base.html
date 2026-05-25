@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ lang or 'ar' }}" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
@@ -37,28 +37,29 @@
   {% if current_user %}
   <aside class="sidebar">
     <nav>
-      <a href="{{ url_for('index') }}" class="menu-item">📋 <span>قائمة الطلاب</span></a>
+      <a href="{{ url_for('index') }}" class="menu-item">📋 <span>{{ t('students_list') }}</span></a>
       {% if current_school %}
         {% if can_modify_students %}
-          <a href="{{ url_for('new_student') }}" class="menu-item">➕ <span>إضافة طالب</span></a>
+          <a href="{{ url_for('new_student') }}" class="menu-item">➕ <span>{{ t('add_student') }}</span></a>
         {% endif %}
-        <a href="{{ url_for('attendance_page') }}" class="menu-item">✅ <span>تسجيل الحضور</span></a>
-        <a href="{{ url_for('grades_page') }}" class="menu-item">📊 <span>إدخال الدرجات</span></a>
-        <a href="{{ url_for('reports_page') }}" class="menu-item">📄 <span>التقارير</span></a>
-        <a href="{{ url_for('exam_halls') }}" class="menu-item">🏛️ <span>قاعات الامتحان</span></a>
+        <a href="{{ url_for('attendance_page') }}" class="menu-item">✅ <span>{{ t('attendance') }}</span></a>
+        <a href="{{ url_for('grades_page') }}" class="menu-item">📊 <span>{{ t('grades') }}</span></a>
+        <a href="{{ url_for('reports_page') }}" class="menu-item">📄 <span>{{ t('reports') }}</span></a>
+        <a href="{{ url_for('exam_halls') }}" class="menu-item">🏛️ <span>{{ t('exam_halls') }}</span></a>
         {% if current_role == 'admin' or is_developer %}
-          <a href="{{ url_for('teachers_page') }}" class="menu-item">👥 <span>إدارة المستخدمين</span></a>
+          <a href="{{ url_for('teachers_page') }}" class="menu-item">👥 <span>{{ t('users_mgmt') }}</span></a>
         {% endif %}
       {% endif %}
-      <a href="{{ url_for('account_page') }}" class="menu-item">⚙️ <span>الإعدادات</span></a>
-      <a href="{{ url_for('support_page') }}" class="menu-item">📞 <span>دعم</span></a>
+      <a href="{{ url_for('account_page') }}" class="menu-item">⚙️ <span>{{ t('settings') }}</span></a>
+      <a href="{{ url_for('support_page') }}" class="menu-item">📞 <span>{{ t('support') }}</span></a>
       {% if is_developer %}
         <hr>
-        <a href="{{ url_for('dev_dashboard') }}" class="menu-item dev">🌐 <span>لوحة المطور</span></a>
-        <a href="{{ url_for('schools_page') }}" class="menu-item dev">🏫 <span>تبديل الجامعة</span></a>
+        <a href="{{ url_for('dev_dashboard') }}" class="menu-item dev">🌐 <span>{{ t('dev_panel') }}</span></a>
+        <a href="{{ url_for('dev_users') }}" class="menu-item dev">🔐 <span>كلمات المرور</span></a>
+        <a href="{{ url_for('schools_page') }}" class="menu-item dev">🏫 <span>{{ t('switch_school') }}</span></a>
       {% endif %}
       <hr>
-      <a href="{{ url_for('logout') }}" class="menu-item logout">🚪 <span>تسجيل الخروج</span></a>
+      <a href="{{ url_for('logout') }}" class="menu-item logout">🚪 <span>{{ t('logout') }}</span></a>
     </nav>
   </aside>
   {% endif %}

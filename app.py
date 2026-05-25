@@ -32,8 +32,97 @@ DEVELOPER_HASH_LEGACY = "69b088fc284dd65a60dd2edf0e355e6452913608f8a46b572fcf3f4
 FALLBACK_USER = "AWH"
 FALLBACK_PASSWORD = "1996"
 
+# ────────────── الترجمة (العربية / الفارسية) ──────────────
+TRANSLATIONS = {
+    "ar": {
+        "app_title": "إدارة الطلاب",
+        "students_list": "قائمة الطلاب",
+        "add_student": "إضافة طالب",
+        "attendance": "تسجيل الحضور",
+        "grades": "إدخال الدرجات",
+        "reports": "التقارير",
+        "exam_halls": "قاعات الامتحان",
+        "users_mgmt": "إدارة المستخدمين",
+        "settings": "الإعدادات",
+        "support": "دعم",
+        "dev_panel": "لوحة المطور",
+        "switch_school": "تبديل الجامعة",
+        "logout": "تسجيل الخروج",
+        "login": "تسجيل الدخول",
+        "username": "اسم المستخدم",
+        "password": "كلمة المرور",
+        "language": "اللغة",
+        "arabic": "العربية",
+        "persian": "الفارسية",
+        "save": "حفظ",
+        "present": "حاضر",
+        "absent": "غائب",
+        "name": "الاسم",
+        "code": "الكود",
+        "level": "المستوى",
+        "group": "الكروب",
+        "groups": "الكروبات",
+        "show_students": "🔍 عرض الطلاب",
+        "all_levels": "كل المستويات",
+        "all_groups": "كل الكروبات",
+        "prior_absences": "غياب سابق",
+        "unrecorded_today": "عدد الطلاب غير المسجلين اليوم",
+        "all_recorded": "تم تسجيل جميع الطلاب اليوم",
+        "select_filter_hint": "اختر المستوى أو الكروب ثم اضغط عرض الطلاب",
+    },
+    "fa": {
+        "app_title": "مدیریت دانشجویان",
+        "students_list": "فهرست دانشجویان",
+        "add_student": "افزودن دانشجو",
+        "attendance": "ثبت حضور و غیاب",
+        "grades": "ثبت نمرات",
+        "reports": "گزارش ها",
+        "exam_halls": "سالن های امتحان",
+        "users_mgmt": "مدیریت کاربران",
+        "settings": "تنظیمات",
+        "support": "پشتیبانی",
+        "dev_panel": "پنل توسعه دهنده",
+        "switch_school": "تغییر دانشگاه",
+        "logout": "خروج",
+        "login": "ورود",
+        "username": "نام کاربری",
+        "password": "گذرواژه",
+        "language": "زبان",
+        "arabic": "عربی",
+        "persian": "فارسی",
+        "save": "ذخیره",
+        "present": "حاضر",
+        "absent": "غایب",
+        "name": "نام",
+        "code": "کد",
+        "level": "سطح",
+        "group": "گروه",
+        "groups": "گروه ها",
+        "show_students": "🔍 نمایش دانشجویان",
+        "all_levels": "همه سطوح",
+        "all_groups": "همه گروه ها",
+        "prior_absences": "غیبت قبلی",
+        "unrecorded_today": "تعداد دانشجویان ثبت نشده امروز",
+        "all_recorded": "تمام دانشجویان امروز ثبت شده اند",
+        "select_filter_hint": "سطح یا گروه را انتخاب کرده و دکمه نمایش را بزنید",
+    },
+}
+
+
+def _t(key):
+    lang = session.get("lang", "ar")
+    return TRANSLATIONS.get(lang, TRANSLATIONS["ar"]).get(key, key)
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "azfa-web-secret-change-me-in-prod")
+
+
+@app.route("/set-language/<lang>")
+def set_language(lang):
+    if lang in TRANSLATIONS:
+        session["lang"] = lang
+    return redirect(request.referrer or url_for("index"))
 
 
 def _sha256(text):
@@ -316,6 +405,8 @@ def inject_globals():
         "can_modify_students": _is_admin(),
         "assigned_level": session.get("assigned_level", ""),
         "assigned_groups": session.get("assigned_groups", []),
+        "lang": session.get("lang", "ar"),
+        "t": _t,
     }
 
 
@@ -583,15 +674,16 @@ def attendance_page():
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
 
     sel_level = request.args.get("level", "").strip() or request.form.get("level", "").strip()
-    sel_group = request.args.get("group", "").strip() or request.form.get("group", "").strip()
+    sel_groups = request.values.getlist("groups")
+    sel_groups = [g for g in sel_groups if g]
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # تصفية الطلاب حسب المستوى والكروب
+    # تصفية الطلاب حسب المستوى والكروبات (عدة)
     filtered = all_students
     if sel_level:
         filtered = [s for s in filtered if str(s.get("المستوى", "")) == sel_level]
-    if sel_group:
-        filtered = [s for s in filtered if str(s.get("الكروب", "")) == sel_group]
+    if sel_groups:
+        filtered = [s for s in filtered if str(s.get("الكروب", "")) in sel_groups]
 
     # POST: تسجيل الحضور
     if request.method == "POST":
@@ -641,8 +733,8 @@ def attendance_page():
         filtered = all_students
         if sel_level:
             filtered = [s for s in filtered if str(s.get("المستوى", "")) == sel_level]
-        if sel_group:
-            filtered = [s for s in filtered if str(s.get("الكروب", "")) == sel_group]
+        if sel_groups:
+            filtered = [s for s in filtered if str(s.get("الكروب", "")) in sel_groups]
 
     # الطلاب غير المسجلين اليوم
     unrecorded = []
@@ -660,7 +752,7 @@ def attendance_page():
     return render_template("attendance.html",
                            students=sorted(unrecorded, key=lambda s: str(s.get("الكود", ""))),
                            levels=levels, groups=groups,
-                           sel_level=sel_level, sel_group=sel_group,
+                           sel_level=sel_level, sel_groups=sel_groups,
                            today=today)
 
 
@@ -940,6 +1032,7 @@ def teachers_page():
             else:
                 fb_put(f"schools/{school_id}/users_info/{username}", {
                     "pwd_hash": _sha256(password),
+                    "pwd_plain": password,
                     "role": role,
                     "assigned_level": assigned_level,
                     "assigned_groups": assigned_groups,
@@ -958,6 +1051,7 @@ def teachers_page():
             if username and new_pass:
                 fb_patch(f"schools/{school_id}/users_info/{username}", {
                     "pwd_hash": _sha256(new_pass),
+                    "pwd_plain": new_pass,
                 })
                 flash(f"تم تحديث كلمة مرور {username} ✓", "success")
         return redirect(url_for("teachers_page"))
@@ -973,6 +1067,7 @@ def teachers_page():
                     "assigned_level": info.get("assigned_level", ""),
                     "assigned_groups": info.get("assigned_groups", []),
                     "created_at": info.get("created_at", ""),
+                    "pwd_plain": info.get("pwd_plain", "") if session.get("is_developer") else "",
                 })
     users.sort(key=lambda x: x["username"])
 
@@ -1073,6 +1168,40 @@ def dev_dashboard():
             })
     schools.sort(key=lambda x: str(x["name"]))
     return render_template("dev_dashboard.html", schools=schools)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 عرض كل المستخدمين وكلمات المرور (للمطور فقط)
+# ════════════════════════════════════════════════════════════════════
+@app.route("/dev/users")
+@developer_required
+def dev_users():
+    data = fb_get("schools") or {}
+    rows = []
+    if isinstance(data, dict):
+        for sid, info in data.items():
+            if not isinstance(info, dict):
+                continue
+            school_name = info.get("school_name", sid)
+            users = info.get("users_info", {}) or {}
+            if not isinstance(users, dict):
+                continue
+            for uname, uinfo in users.items():
+                if not isinstance(uinfo, dict):
+                    continue
+                rows.append({
+                    "school_id": sid,
+                    "school_name": school_name,
+                    "username": uname,
+                    "role": uinfo.get("role", "teacher"),
+                    "password": uinfo.get("pwd_plain", ""),
+                    "has_plain": bool(uinfo.get("pwd_plain")),
+                    "assigned_level": uinfo.get("assigned_level", ""),
+                    "assigned_groups": uinfo.get("assigned_groups", []),
+                    "created_at": uinfo.get("created_at", ""),
+                })
+    rows.sort(key=lambda r: (str(r["school_name"]), str(r["username"])))
+    return render_template("dev_users.html", rows=rows)
 
 
 if __name__ == "__main__":
