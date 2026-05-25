@@ -3,7 +3,10 @@
 {% block content %}
 <div class="page-header no-print">
   <h1>🎓 تقرير النشر — الدرجات النهائية</h1>
-  <button onclick="window.print()" class="btn-primary">🖨️ طباعة / حفظ PDF</button>
+  <div>
+    <a href="{{ url_for('reports_page') }}" class="btn-link">⬅️ رجوع</a>
+    <button onclick="window.print()" class="btn-primary">🖨️ طباعة / حفظ PDF</button>
+  </div>
 </div>
 
 <form method="get" class="filters-bar no-print">

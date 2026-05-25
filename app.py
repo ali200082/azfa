@@ -1049,6 +1049,7 @@ def statistics_report():
     by_group = {}
     total_absences = 0
 
+    rows = []
     for s in students_all:
         t = _calc_total(s)
         sum_total += t
@@ -1069,11 +1070,18 @@ def statistics_report():
         by_group.setdefault(grp, {"total": 0, "pass": 0, "fail": 0})
         by_group[grp]["total"] += 1
         by_group[grp]["pass" if result == "ناجح" else "fail"] += 1
+        s_copy = dict(s)
+        s_copy["_total"] = t
+        s_copy["_result"] = result
+        rows.append(s_copy)
+
+    rows.sort(key=lambda s: (str(s.get("المستوى", "")), str(s.get("الكروب", "")), str(s.get("الكود", ""))))
 
     avg = (sum_total / total) if total else 0
     pass_rate = (pass_count / total * 100) if total else 0
 
     return render_template("statistics.html",
+                           students=rows,
                            total=total, pass_count=pass_count, fail_count=fail_count,
                            avg=round(avg, 2), pass_rate=round(pass_rate, 1),
                            total_absences=total_absences,

@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}إحصائيات عامة{% endblock %}
+{% block title %}بيانات الجامعة{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>📊 الإحصائيات العامة</h1>
+  <h1>📊 تقرير بيانات الجامعة</h1>
   <a href="{{ url_for('reports_page') }}" class="btn-link">⬅️ رجوع</a>
 </div>
 
@@ -16,7 +16,39 @@
 </div>
 
 <div class="card">
-  <h3>📚 حسب المستوى</h3>
+  <h3>📋 جميع الطلاب — البيانات الكاملة</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
+        <th>غياب</th><th>الحضور</th><th>النشاط</th><th>الشفهي</th><th>التحريري</th>
+        <th>المجموع</th><th>التقدير</th>
+      </tr></thead>
+      <tbody>
+        {% for s in students %}
+        <tr class="{% if s._result == 'راسب' %}row-fail{% endif %}">
+          <td>{{ loop.index }}</td>
+          <td>{{ s.get('الكود', '') }}</td>
+          <td><b>{{ s.get('الاسم', '') }}</b></td>
+          <td>{{ s.get('المستوى', '') }}</td>
+          <td>{{ s.get('الكروب', '') }}</td>
+          <td>{{ s.get('غياب', 0) }}</td>
+          <td>{{ s.get('درجة الحضور', 0) }}</td>
+          <td>{{ s.get('النشاط', 0) }}</td>
+          <td>{{ s.get('الشفهي', 0) }}</td>
+          <td>{{ s.get('التحريري', 0) }}</td>
+          <td><b>{{ s._total }}</b></td>
+          <td><span class="badge {% if s._result=='ناجح' %}ok{% else %}danger{% endif %}">{{ s._result }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not students %}<p class="empty">لا توجد بيانات</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>📚 ملخص حسب المستوى</h3>
   <div class="table-wrap">
     <table>
       <thead><tr><th>المستوى</th><th>الإجمالي</th><th>ناجح</th><th>راسب</th><th>النسبة</th></tr></thead>
@@ -36,7 +68,7 @@
 </div>
 
 <div class="card">
-  <h3>👥 حسب الكروب</h3>
+  <h3>👥 ملخص حسب الكروب</h3>
   <div class="table-wrap">
     <table>
       <thead><tr><th>الكروب</th><th>الإجمالي</th><th>ناجح</th><th>راسب</th><th>النسبة</th></tr></thead>
