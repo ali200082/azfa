@@ -6,11 +6,11 @@
   <span class="badge-info">📅 {{ today }}</span>
 </div>
 
-<form method="get" class="card">
+<form method="get" class="card" id="filterForm">
   <div class="form-row">
     <label style="flex:1">
       📚 {{ t('level') }}
-      <select name="level">
+      <select name="level" id="levelSel" onchange="document.getElementById('filterForm').submit()">
         <option value="">{{ t('all_levels') }}</option>
         {% for l in levels %}<option value="{{ l }}" {% if l==sel_level %}selected{% endif %}>{{ l }}</option>{% endfor %}
       </select>
@@ -20,9 +20,9 @@
   {% if groups %}
   <div class="groups-pick">
     <div class="groups-pick-title">👥 {{ t('groups') }} <small class="muted">(يمكن اختيار أكثر من كروب)</small></div>
-    <div class="checks-row">
+    <div class="checks-row" id="groupsRow">
       {% for g in groups %}
-      <label class="check-pill">
+      <label class="check-pill" data-group="{{ g }}">
         <input type="checkbox" name="groups" value="{{ g }}" {% if g in sel_groups %}checked{% endif %}>
         <span>{{ g }}</span>
       </label>
@@ -38,6 +38,29 @@
     {% endif %}
   </div>
 </form>
+
+<script>
+  (function(){
+    const groupsByLevel = {{ groups_by_level | tojson }};
+    const levelSel = document.getElementById('levelSel');
+    const row = document.getElementById('groupsRow');
+    if (!levelSel || !row) return;
+    function applyFilter(){
+      const lvl = levelSel.value;
+      const allowed = lvl ? (groupsByLevel[lvl] || []) : null;
+      row.querySelectorAll('.check-pill').forEach(p => {
+        const g = p.getAttribute('data-group');
+        const show = !allowed || allowed.indexOf(g) !== -1;
+        p.style.display = show ? '' : 'none';
+        if (!show) {
+          const cb = p.querySelector('input[type=checkbox]');
+          if (cb) cb.checked = false;
+        }
+      });
+    }
+    applyFilter();
+  })();
+</script>
 
 {% if students %}
 <div class="att-summary">{{ t('unrecorded_today') }}: <b>{{ students|length }}</b></div>

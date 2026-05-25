@@ -695,6 +695,16 @@ def attendance_page():
     levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
 
+    # خريطة الكروبات لكل مستوى (لفلترة الكروبات حسب المستوى المختار)
+    groups_by_level = {}
+    for s in all_students:
+        lvl = str(s.get("المستوى", ""))
+        grp = str(s.get("الكروب", ""))
+        if not lvl or not grp:
+            continue
+        groups_by_level.setdefault(lvl, set()).add(grp)
+    groups_by_level = {k: sorted(v) for k, v in groups_by_level.items()}
+
     sel_level = request.args.get("level", "").strip() or request.form.get("level", "").strip()
     sel_groups = request.values.getlist("groups")
     sel_groups = [g for g in sel_groups if g]
@@ -774,6 +784,7 @@ def attendance_page():
     return render_template("attendance.html",
                            students=sorted(unrecorded, key=lambda s: str(s.get("الكود", ""))),
                            levels=levels, groups=groups,
+                           groups_by_level=groups_by_level,
                            sel_level=sel_level, sel_groups=sel_groups,
                            today=today)
 
