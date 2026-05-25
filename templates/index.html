@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}قائمة الطلاب{% endblock %}
+{% block content %}
+
+<form method="get" class="filters card">
+  <input type="search" name="q" value="{{ q }}" placeholder="🔍 ابحث بالاسم أو الكود...">
+  <select name="level">
+    <option value="">كل المستويات</option>
+    {% for lv in levels %}<option value="{{ lv }}" {% if lv==level %}selected{% endif %}>{{ lv }}</option>{% endfor %}
+  </select>
+  <select name="group">
+    <option value="">كل الكروبات</option>
+    {% for gp in groups %}<option value="{{ gp }}" {% if gp==group %}selected{% endif %}>{{ gp }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn-primary">عرض</button>
+  {% if q or level or group %}<a href="{{ url_for('index') }}" class="btn-link">مسح</a>{% endif %}
+</form>
+
+<p class="muted">عدد النتائج: <strong>{{ students|length }}</strong></p>
+
+{% if students %}
+<div class="table-wrap card">
+  <table>
+    <thead>
+      <tr>
+        <th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
+        <th>غياب</th><th>المجموع</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in students %}
+      {% set sname = s.get('الاسم','') %}
+      <tr>
+        <td>{{ s.get('الكود','') }}</td>
+        <td><a href="{{ url_for('view_student', sid=s.id) }}">{{ sname }}</a></td>
+        <td>{{ s.get('المستوى','') }}</td>
+        <td>{{ s.get('الكروب','') }}</td>
+        <td>{{ s.get('غياب', 0) }}</td>
+        <td><strong>{{ s._total }}</strong></td>
+        <td class="actions">
+          <a href="{{ url_for('edit_student', sid=s.id) }}" class="btn-sm">تعديل</a>
+          <form method="post" action="{{ url_for('remove_student', sid=s.id) }}" style="display:inline"
+                onsubmit="return confirm('تأكيد حذف ' + {{ sname|tojson }} + '؟')">
+            <button class="btn-sm btn-danger">حذف</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- عرض بطاقات للموبايل -->
+<div class="cards-mobile">
+  {% for s in students %}
+  <div class="card student-card">
+    <div class="row-between">
+      <h3><a href="{{ url_for('view_student', sid=s.id) }}">{{ s.get('الاسم','') }}</a></h3>
+      <span class="badge">{{ s._total }}</span>
+    </div>
+    <p class="muted">الكود: {{ s.get('الكود','') }} · {{ s.get('المستوى','') }} / {{ s.get('الكروب','') }}</p>
+    <div class="row-between">
+      <span>غياب: {{ s.get('غياب', 0) }}</span>
+      <div class="actions">
+        <a href="{{ url_for('edit_student', sid=s.id) }}" class="btn-sm">تعديل</a>
+        <form method="post" action="{{ url_for('remove_student', sid=s.id) }}" style="display:inline"
+              onsubmit="return confirm('تأكيد الحذف؟')">
+          <button class="btn-sm btn-danger">حذف</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card empty">
+  <p>لا يوجد طلاب لعرضهم.</p>
+  <a href="{{ url_for('new_student') }}" class="btn-primary">إضافة أول طالب</a>
+</div>
+{% endif %}
+
+{% endblock %}

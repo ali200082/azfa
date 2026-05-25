@@ -1,0 +1,139 @@
+/* ─── AZFA Web — تصميم متجاوب ─── */
+* { box-sizing: border-box; }
+:root {
+  --primary: #0d6efd;
+  --primary-dark: #0a58ca;
+  --danger: #dc3545;
+  --bg: #f4f6fa;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --success: #16a34a;
+  --shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Tahoma", "Arial", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+
+/* Topbar */
+.topbar {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.topbar .container { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.topbar a { color: #fff; text-decoration: none; }
+.brand { font-size: 1.25rem; font-weight: 700; }
+.topbar nav { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* Card */
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+/* Buttons */
+.btn-primary, button.btn-primary {
+  background: var(--primary); color: #fff; border: none;
+  padding: 10px 18px; border-radius: 8px; font-size: 1rem;
+  cursor: pointer; text-decoration: none; display: inline-block;
+  transition: background .15s;
+}
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-link { color: var(--primary); text-decoration: none; padding: 10px; }
+.btn-sm {
+  padding: 6px 12px; border-radius: 6px; font-size: .9rem;
+  background: #eef2ff; color: var(--primary); border: 1px solid #c7d2fe;
+  cursor: pointer; text-decoration: none; display: inline-block;
+}
+.btn-danger { background: #fee2e2; color: var(--danger); border-color: #fecaca; }
+
+/* Filters */
+.filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filters input, .filters select {
+  flex: 1; min-width: 140px; padding: 10px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 1rem; background: #fff;
+}
+
+/* Table */
+.table-wrap { overflow-x: auto; padding: 0; }
+table { width: 100%; border-collapse: collapse; }
+thead { background: #f9fafb; }
+th, td { padding: 12px; text-align: right; border-bottom: 1px solid var(--border); }
+th { font-weight: 600; color: var(--muted); font-size: .9rem; }
+tbody tr:hover { background: #fafbfc; }
+td.actions { display: flex; gap: 6px; }
+td a { color: var(--primary); text-decoration: none; font-weight: 500; }
+
+/* Mobile cards (hidden on desktop) */
+.cards-mobile { display: none; }
+.student-card h3 { margin: 0; }
+.student-card h3 a { color: var(--text); text-decoration: none; }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.badge {
+  background: var(--primary); color: #fff; padding: 4px 10px;
+  border-radius: 999px; font-size: .85rem; font-weight: 600;
+}
+.badge.big { font-size: 1rem; padding: 8px 16px; }
+
+/* Form */
+.student-form { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.student-form label { display: flex; flex-direction: column; gap: 4px; }
+.student-form span { font-size: .9rem; color: var(--muted); font-weight: 500; }
+.student-form input {
+  padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem;
+}
+.student-form input:focus { outline: none; border-color: var(--primary); }
+.form-actions { grid-column: 1 / -1; display: flex; gap: 10px; margin-top: 8px; }
+
+/* Details */
+.details { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; }
+.details dt { font-weight: 600; color: var(--muted); }
+.details dd { margin: 0; }
+
+/* Flash */
+.flash-area { margin: 8px 0; }
+.flash { padding: 12px 16px; border-radius: 8px; margin: 6px 0; font-weight: 500; }
+.flash.success { background: #dcfce7; color: var(--success); border: 1px solid #86efac; }
+.flash.error { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+
+.muted { color: var(--muted); }
+.empty { text-align: center; padding: 40px; }
+.footer { text-align: center; padding: 20px; color: var(--muted); font-size: .85rem; }
+
+/* School badges & list */
+.school-badge {
+  background: rgba(255,255,255,.2); padding: 6px 12px; border-radius: 999px;
+  font-size: .9rem; font-weight: 500;
+}
+.btn-link-light { color: #fff; text-decoration: underline; opacity: .9; }
+.schools-list { display: grid; gap: 10px; margin-top: 16px; }
+.school-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px; border: 1px solid var(--border); border-radius: 10px;
+  text-decoration: none; color: var(--text); background: #fff;
+  transition: all .15s;
+}
+.school-item:hover { border-color: var(--primary); transform: translateY(-1px); box-shadow: var(--shadow); }
+.school-item h3 { margin: 0 0 4px; }
+
+/* ─── Mobile breakpoint ─── */
+@media (max-width: 700px) {
+  .table-wrap { display: none; }
+  .cards-mobile { display: block; }
+  .filters { flex-direction: column; align-items: stretch; }
+  .filters input, .filters select { width: 100%; }
+  .brand { font-size: 1.1rem; }
+  body { font-size: 15px; }
+}

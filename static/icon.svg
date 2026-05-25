@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0d6efd"/>
+  <text x="50%" y="55%" font-size="240" text-anchor="middle" fill="#fff"
+        font-family="Segoe UI, Tahoma, Arial" font-weight="700" dominant-baseline="middle">📚</text>
+</svg>

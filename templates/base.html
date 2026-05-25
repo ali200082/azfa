@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="theme-color" content="#0d6efd">
+  <title>{% block title %}إدارة الطلاب{% endblock %} | AZFA</title>
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <a href="{{ url_for('index') }}" class="brand">📚 إدارة الطلاب</a>
+      <nav>
+        {% if current_school %}
+          <span class="school-badge">🏫 {{ current_school.name }}</span>
+          <a href="{{ url_for('schools_page') }}" class="btn-link-light">تبديل</a>
+          <a href="{{ url_for('new_student') }}" class="btn-primary">+ طالب جديد</a>
+        {% else %}
+          <a href="{{ url_for('schools_page') }}">اختر مدرسة</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-area">
+          {% for cat, msg in messages %}
+            <div class="flash {{ cat }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <small>AZFA Web · يعمل على الموبايل والحاسبة</small>
+  </footer>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('{{ url_for("static", filename="sw.js") }}')
+          .catch(()=>{});
+      });
+    }
+  </script>
+</body>
+</html>

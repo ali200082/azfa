@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}اختر المدرسة{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>📚 اختر مدرسة للعمل عليها</h2>
+  <p class="muted">اختر المدرسة التي تريد عرض/تعديل بياناتها:</p>
+  {% if schools %}
+    <div class="schools-list">
+      {% for sch in schools %}
+        <a href="{{ url_for('select_school', school_id=sch.id) }}" class="school-item">
+          <div>
+            <h3>{{ sch.name }}</h3>
+            <small class="muted">المعرف: {{ sch.id }}</small>
+          </div>
+          <span class="badge">{{ sch.count }} طالب</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">لا توجد مدارس متاحة. تحقق من الاتصال بـ Firebase.</p>
+  {% endif %}
+</div>
+{% endblock %}

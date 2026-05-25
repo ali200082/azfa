@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ student.get('الاسم','طالب') }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row-between">
+    <h2>{{ student.get('الاسم','') }}</h2>
+    <span class="badge big">المجموع: {{ student._total }}</span>
+  </div>
+  <dl class="details">
+    {% for name, _ in fields %}
+    <dt>{{ name }}</dt>
+    <dd>{{ student.get(name, '—') }}</dd>
+    {% endfor %}
+  </dl>
+  <div class="form-actions">
+    <a href="{{ url_for('edit_student', sid=student.id) }}" class="btn-primary">تعديل</a>
+    <a href="{{ url_for('index') }}" class="btn-link">رجوع</a>
+  </div>
+</div>
+{% endblock %}

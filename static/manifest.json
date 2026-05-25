@@ -1,0 +1,15 @@
+{
+  "name": "AZFA - إدارة الطلاب",
+  "short_name": "AZFA",
+  "description": "تطبيق ويب لإدارة بيانات الطلاب",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fa",
+  "theme_color": "#0d6efd",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
