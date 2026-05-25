@@ -137,3 +137,124 @@ td a { color: var(--primary); text-decoration: none; font-weight: 500; }
   .brand { font-size: 1.1rem; }
   body { font-size: 15px; }
 }
+
+/* ─── Login Page ─── */
+.login-body {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.login-wrapper { width: 100%; max-width: 420px; }
+.login-card {
+  background: rgba(30, 41, 59, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  padding: 36px 28px 28px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  backdrop-filter: blur(10px);
+  color: #e2e8f0;
+}
+.login-header { text-align: center; margin-bottom: 24px; }
+.login-icon {
+  font-size: 42px; margin-bottom: 8px;
+  display: inline-block;
+  background: linear-gradient(135deg, #06b6d4, #3b82f6);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.login-header h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  color: #06b6d4;
+  letter-spacing: 1px;
+}
+.login-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+.login-form label {
+  display: block;
+  font-size: 13px;
+  margin: 14px 0 6px;
+  color: #cbd5e1;
+}
+.login-form input[type="text"],
+.login-form input[type="password"] {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: border-color .15s;
+}
+.login-form input:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15);
+}
+.password-wrap { position: relative; }
+.toggle-pass {
+  position: absolute;
+  left: 8px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: 0; color: #94a3b8;
+  cursor: pointer; font-size: 18px; padding: 4px 8px;
+}
+.btn-login {
+  width: 100%; margin-top: 22px;
+  padding: 12px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff; border: 0; border-radius: 8px;
+  font-size: 16px; font-weight: 600;
+  cursor: pointer;
+  transition: transform .1s, box-shadow .2s;
+}
+.btn-login:hover {
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.4);
+  transform: translateY(-1px);
+}
+.btn-login:active { transform: translateY(0); }
+.login-footer {
+  text-align: center; margin-top: 18px;
+  color: #94a3b8; font-size: 12px;
+}
+.login-flashes { margin-bottom: 8px; }
+.login-flashes .flash {
+  padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 8px;
+}
+.login-flashes .flash.error {
+  background: rgba(220, 38, 38, 0.15); color: #fca5a5;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+}
+.login-flashes .flash.success {
+  background: rgba(22, 163, 74, 0.15); color: #86efac;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}
+
+/* ─── User badge & logout in topbar ─── */
+.user-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 13px;
+  margin: 0 4px;
+}
+.btn-logout {
+  display: inline-block;
+  padding: 6px 12px;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 13px;
+  margin-right: 4px;
+  transition: background .15s;
+}
+.btn-logout:hover { background: #dc2626; }

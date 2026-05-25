@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>AZFA | تسجيل الدخول</title>
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-icon">🔒</div>
+        <h1>AZFA Login</h1>
+        <p class="login-subtitle">نظام إدارة الطلاب</p>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="login-flashes">
+            {% for cat, msg in messages %}
+              <div class="flash {{ cat }}">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" class="login-form" autocomplete="off">
+        <label for="username">اسم المستخدم</label>
+        <input type="text" id="username" name="username"
+               value="{{ username|default('') }}"
+               autocomplete="username" autofocus required>
+
+        <label for="password">كلمة المرور</label>
+        <div class="password-wrap">
+          <input type="password" id="password" name="password"
+                 autocomplete="current-password" required>
+          <button type="button" class="toggle-pass" onclick="togglePass()" aria-label="إظهار/إخفاء">👁</button>
+        </div>
+
+        <button type="submit" class="btn-login">دخول</button>
+      </form>
+
+      <div class="login-footer">
+        <small>يستخدم نفس بيانات حسابك في برنامج الحاسبة</small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function togglePass(){
+      var p = document.getElementById('password');
+      p.type = (p.type === 'password') ? 'text' : 'password';
+    }
+  </script>
+</body>
+</html>

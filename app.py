@@ -12,6 +12,8 @@ from flask import (Flask, render_template, request, redirect, url_for,
 import requests
 import uuid
 import os
+import hashlib
+from functools import wraps
 from datetime import datetime
 
 # ────────────── إعدادات Firebase (نفس البرنامج الحالي) ──────────────
@@ -19,8 +21,41 @@ FIREBASE_URL = "https://azfa-3ff21-default-rtdb.firebaseio.com"
 FIREBASE_URL_FALLBACK = "https://falling-haze-c742.ahmed-wazir-hlail.workers.dev"
 HTTP_TIMEOUT = 15
 
+# ────────────── إعدادات المصادقة (نفس البرنامج الأصلي) ──────────────
+# حساب المطور (مطابق لما في برنامج الحاسبة)
+DEVELOPER_ID = bytes([65, 90, 70, 65, 95, 68, 69, 86]).decode()  # AZFA_DEV
+DEVELOPER_HASH = "69b088fc284dd65a60dd2edf0e355e6452913608f8a46b572fcf3f43decd65fb"
+# حساب طوارئ افتراضي (يستخدم فقط إذا فشل الاتصال بالسحابة)
+FALLBACK_USER = "AWH"
+FALLBACK_PASSWORD = "1996"
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "azfa-web-secret-change-me-in-prod")
+
+
+def _sha256(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("username"):
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def developer_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("username"):
+            return redirect(url_for("login"))
+        if not session.get("is_developer"):
+            flash("هذه الصفحة للمطور فقط", "error")
+            return redirect(url_for("index"))
+        return view(*args, **kwargs)
+    return wrapped
 
 # ────────────── حقول الطالب ──────────────
 STUDENT_FIELDS = [
@@ -112,11 +147,17 @@ def list_schools():
 
 
 def current_school_id():
-    """يرجع معرف المدرسة المختار حالياً (من query ثم session)."""
-    sid = request.args.get("school") or session.get("school_id")
-    if sid and request.args.get("school"):
-        session["school_id"] = sid
-    return sid
+    """يرجع معرف المدرسة المختار حالياً.
+    - المستخدم العادي: محجوز بمدرسته (لا يقدر يغيرها).
+    - المطور: يقدر يبدل عبر ?school=... أو من صفحة المدارس.
+    """
+    if session.get("is_developer"):
+        sid = request.args.get("school") or session.get("school_id")
+        if sid and request.args.get("school"):
+            session["school_id"] = sid
+        return sid
+    # غير المطور: يلتزم بمدرسته فقط
+    return session.get("school_id")
 
 
 def students_path(school_id, student_id=None):
@@ -207,11 +248,92 @@ def inject_globals():
     schools = list_schools()
     sid = session.get("school_id")
     current = next((s for s in schools if s["id"] == sid), None)
-    return {"all_schools": schools, "current_school": current}
+    return {
+        "all_schools": schools,
+        "current_school": current,
+        "current_user": session.get("username"),
+        "current_role": session.get("role"),
+        "is_developer": session.get("is_developer", False),
+    }
+
+
+# ────────────── المصادقة (تسجيل الدخول/الخروج) ──────────────
+def cloud_authenticate(username, password):
+    """يبحث في كل المدارس عن المستخدم ويتحقق من كلمة السر.
+    يرجع: (school_id, role) أو (None, None)."""
+    pwd_hash = _sha256(password)
+    all_schools = fb_get("schools")
+    if not isinstance(all_schools, dict):
+        return None, None
+    for sid, sdata in all_schools.items():
+        if not isinstance(sdata, dict):
+            continue
+        cloud_users = sdata.get("users_info", {})
+        if not isinstance(cloud_users, dict):
+            continue
+        user_info = cloud_users.get(username)
+        if isinstance(user_info, dict) and user_info.get("pwd_hash") == pwd_hash:
+            return sid, user_info.get("role", "teacher")
+    return None, None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if not username or not password:
+            flash("الرجاء إدخال اسم المستخدم وكلمة المرور", "error")
+            return render_template("login.html", username=username)
+
+        # 1) حساب المطور
+        if username == DEVELOPER_ID and _sha256(password) == DEVELOPER_HASH:
+            session.clear()
+            session["username"] = DEVELOPER_ID
+            session["role"] = "admin"
+            session["is_developer"] = True
+            flash(f"مرحباً أيها المطور 👋", "success")
+            return redirect(request.args.get("next") or url_for("schools_page"))
+
+        # 2) حسابات السحابة (من schools/<id>/users_info)
+        school_id, role = cloud_authenticate(username, password)
+        if school_id:
+            session.clear()
+            session["username"] = username
+            session["role"] = role
+            session["is_developer"] = False
+            session["school_id"] = school_id
+            flash(f"مرحباً {username} 👋", "success")
+            return redirect(request.args.get("next") or url_for("index"))
+
+        # 3) حساب طوارئ افتراضي
+        if username == FALLBACK_USER and password == FALLBACK_PASSWORD:
+            session.clear()
+            session["username"] = username
+            session["role"] = "admin"
+            session["is_developer"] = False
+            flash("تم الدخول بالحساب الافتراضي — اختر المدرسة", "success")
+            return redirect(url_for("schools_page"))
+
+        flash("اسم المستخدم أو كلمة المرور غير صحيحة", "error")
+        return render_template("login.html", username=username)
+
+    if session.get("username"):
+        return redirect(url_for("index"))
+    return render_template("login.html", username="")
+
+
+@app.route("/logout")
+def logout():
+    user = session.get("username", "")
+    session.clear()
+    flash(f"تم تسجيل الخروج ({user})", "success")
+    return redirect(url_for("login"))
 
 
 # ────────────── المسارات ──────────────
 @app.route("/")
+@login_required
 def index():
     school_id = current_school_id()
     if not school_id:
@@ -248,18 +370,24 @@ def index():
 
 
 @app.route("/schools")
+@login_required
 def schools_page():
     return render_template("schools.html", schools=list_schools())
 
 
 @app.route("/schools/select/<school_id>")
+@login_required
 def select_school(school_id):
+    if not session.get("is_developer"):
+        flash("لا يمكنك تغيير المدرسة. مدرستك محددة من قبل الإدارة.", "error")
+        return redirect(url_for("index"))
     session["school_id"] = school_id
     flash("تم اختيار المدرسة ✓", "success")
     return redirect(url_for("index"))
 
 
 @app.route("/student/new", methods=["GET", "POST"])
+@login_required
 def new_student():
     school_id = current_school_id()
     if not school_id:
@@ -282,6 +410,7 @@ def new_student():
 
 
 @app.route("/student/<sid>/edit", methods=["GET", "POST"])
+@login_required
 def edit_student(sid):
     school_id = current_school_id()
     if not school_id:
@@ -300,6 +429,7 @@ def edit_student(sid):
 
 
 @app.route("/student/<sid>/delete", methods=["POST"])
+@login_required
 def remove_student(sid):
     school_id = current_school_id()
     if not school_id:
@@ -312,6 +442,7 @@ def remove_student(sid):
 
 
 @app.route("/student/<sid>")
+@login_required
 def view_student(sid):
     school_id = current_school_id()
     if not school_id:
@@ -325,6 +456,7 @@ def view_student(sid):
 
 
 @app.route("/api/students")
+@login_required
 def api_students():
     school_id = current_school_id()
     if not school_id:
@@ -333,6 +465,7 @@ def api_students():
 
 
 @app.route("/api/schools")
+@login_required
 def api_schools():
     return jsonify(list_schools())
 

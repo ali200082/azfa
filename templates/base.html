@@ -17,10 +17,18 @@
       <nav>
         {% if current_school %}
           <span class="school-badge">🏫 {{ current_school.name }}</span>
-          <a href="{{ url_for('schools_page') }}" class="btn-link-light">تبديل</a>
+          {% if is_developer %}
+            <a href="{{ url_for('schools_page') }}" class="btn-link-light">تبديل</a>
+          {% endif %}
           <a href="{{ url_for('new_student') }}" class="btn-primary">+ طالب جديد</a>
-        {% else %}
+        {% elif is_developer %}
           <a href="{{ url_for('schools_page') }}">اختر مدرسة</a>
+        {% endif %}
+        {% if current_user %}
+          <span class="user-badge">
+            {% if is_developer %}👑{% else %}👤{% endif %} {{ current_user }}
+          </span>
+          <a href="{{ url_for('logout') }}" class="btn-logout" title="تسجيل خروج">خروج</a>
         {% endif %}
       </nav>
     </div>
