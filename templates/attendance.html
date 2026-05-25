@@ -15,45 +15,48 @@
     <option value="">كل الكروبات</option>
     {% for g in groups %}<option value="{{ g }}" {% if g==sel_group %}selected{% endif %}>{{ g }}</option>{% endfor %}
   </select>
-  <button class="btn-primary">🔍 عرض</button>
+  <button class="btn-primary">🔍 عرض الطلاب</button>
 </form>
 
 {% if students %}
-<form method="post" id="attForm">
-  <input type="hidden" name="level" value="{{ sel_level }}">
-  <input type="hidden" name="group" value="{{ sel_group }}">
-  <div class="att-actions">
-    <span>عدد غير المسجلين اليوم: <b>{{ students|length }}</b></span>
-    <label><input type="checkbox" id="selAll"> تحديد الكل</label>
-    <button type="submit" name="action" value="present" class="btn-success">✅ تسجيل حضور</button>
-    <button type="submit" name="action" value="absent" class="btn-danger">❌ تسجيل غياب</button>
+<div class="att-summary">عدد الطلاب غير المسجلين اليوم: <b>{{ students|length }}</b></div>
+
+<div class="students-list">
+  {% for s in students %}
+  <div class="student-card">
+    <div class="student-main">
+      <div class="student-name">{{ s.get('الاسم', '') }}</div>
+      <div class="student-meta">
+        <span>🎫 {{ s.get('الكود', '') }}</span>
+        <span>📚 {{ s.get('المستوى', '') }}</span>
+        <span>👥 {{ s.get('الكروب', '') }}</span>
+        <span>❌ غياب سابق: {{ s.get('غياب', 0) }}</span>
+      </div>
+    </div>
+    <div class="student-actions">
+      <form method="post" class="inline-form">
+        <input type="hidden" name="level" value="{{ sel_level }}">
+        <input type="hidden" name="group" value="{{ sel_group }}">
+        <input type="hidden" name="students" value="{{ s.id }}">
+        <button type="submit" name="action" value="present" class="btn-success btn-att">✅ حاضر</button>
+      </form>
+      <form method="post" class="inline-form">
+        <input type="hidden" name="level" value="{{ sel_level }}">
+        <input type="hidden" name="group" value="{{ sel_group }}">
+        <input type="hidden" name="students" value="{{ s.id }}">
+        <button type="submit" name="action" value="absent" class="btn-danger btn-att">❌ غائب</button>
+      </form>
+    </div>
   </div>
-  <div class="table-wrap">
-    <table class="att-table">
-      <thead>
-        <tr><th></th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th><th>أيام الغياب</th></tr>
-      </thead>
-      <tbody>
-        {% for s in students %}
-        <tr>
-          <td><input type="checkbox" name="students" value="{{ s.id }}" class="row-chk"></td>
-          <td>{{ s.get('الكود', '') }}</td>
-          <td>{{ s.get('الاسم', '') }}</td>
-          <td>{{ s.get('المستوى', '') }}</td>
-          <td>{{ s.get('الكروب', '') }}</td>
-          <td>{{ s.get('غياب', 0) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</form>
-<script>
-  document.getElementById('selAll').addEventListener('change', e => {
-    document.querySelectorAll('.row-chk').forEach(c => c.checked = e.target.checked);
-  });
-</script>
+  {% endfor %}
+</div>
 {% else %}
-<div class="empty">لا يوجد طلاب لعرضهم. اختر المستوى والكروب ثم اضغط عرض.</div>
+<div class="empty">
+  {% if sel_level or sel_group %}
+    ✓ تم تسجيل جميع الطلاب اليوم في هذا المستوى/الكروب
+  {% else %}
+    اختر المستوى أو الكروب ثم اضغط <b>عرض الطلاب</b>
+  {% endif %}
+</div>
 {% endif %}
 {% endblock %}

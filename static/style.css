@@ -412,3 +412,34 @@ td a { color: var(--primary); text-decoration: none; font-weight: 500; }
 
 details summary { cursor: pointer; padding: 4px 8px; color: var(--primary); }
 details[open] { background: #f8f9fc; padding: 8px; border-radius: 6px; margin-top: 6px; }
+
+/* ════════ Student cards (attendance) ════════ */
+.att-summary {
+  background: #fff; padding: 12px 16px; border-radius: 10px;
+  margin-bottom: 12px; box-shadow: var(--shadow); font-weight: 600;
+}
+.students-list { display: flex; flex-direction: column; gap: 10px; }
+.student-card {
+  background: #fff; border-radius: 12px; padding: 14px 16px;
+  box-shadow: var(--shadow); border-right: 4px solid var(--primary);
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 14px; flex-wrap: wrap;
+}
+.student-main { flex: 1; min-width: 200px; }
+.student-name { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.student-meta {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 13px; color: var(--muted);
+}
+.student-meta span { background: #f4f6fa; padding: 3px 10px; border-radius: 6px; }
+.student-actions { display: flex; gap: 8px; }
+.btn-att {
+  padding: 10px 18px !important; font-size: 15px !important; min-width: 90px;
+}
+
+@media (max-width: 600px) {
+  .student-card { flex-direction: column; align-items: stretch; }
+  .student-actions { width: 100%; }
+  .student-actions form { flex: 1; }
+  .btn-att { width: 100%; }
+}
