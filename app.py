@@ -1082,26 +1082,6 @@ def statistics_report():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 🟢 تقرير الراسبين فقط
-# ═══════════════════════════════════════════════════════════════════
-@app.route("/reports/failing")
-@login_required
-def failing_report():
-    school_id = current_school_id()
-    if not school_id:
-        return redirect(url_for("schools_page"))
-    all_students = _filter_by_scope(load_students(school_id))
-    failing = []
-    for s in all_students:
-        t = _calc_total(s)
-        if t < 60:
-            s["_total"] = t
-            failing.append(s)
-    failing.sort(key=lambda s: s["_total"])
-    return render_template("failing_report.html", students=failing)
-
-
-# ═══════════════════════════════════════════════════════════════════
 # 🟢 تقرير الغياب
 # ═══════════════════════════════════════════════════════════════════
 @app.route("/reports/absence")
