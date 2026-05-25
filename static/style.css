@@ -477,3 +477,38 @@ details[open] { background: #f8f9fc; padding: 8px; border-radius: 6px; margin-to
   border-radius: 6px; font-family: 'Courier New', monospace;
   font-weight: bold; border: 1px dashed #ffc107;
 }
+
+/* ===== Report tiles ===== */
+.report-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin:15px 0; }
+.tile { display:block; padding:18px; background:#1e293b; border-radius:12px; text-decoration:none; color:#e2e8f0; border:1px solid #334155; transition:transform .15s, border-color .15s; }
+.tile:hover { transform:translateY(-3px); border-color:#0d6efd; }
+.tile-icon { font-size:32px; margin-bottom:6px; }
+.tile-title { font-weight:bold; font-size:16px; margin-bottom:4px; }
+.tile-sub { font-size:12px; opacity:.7; }
+
+/* ===== Stat grid ===== */
+.stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:15px 0; }
+.stat-card { background:#1e293b; padding:18px; border-radius:12px; text-align:center; border:1px solid #334155; }
+.stat-card.ok { border-color:#16a34a; }
+.stat-card.danger { border-color:#dc2626; }
+.stat-num { font-size:28px; font-weight:bold; color:#0d6efd; }
+.stat-card.ok .stat-num { color:#22c55e; }
+.stat-card.danger .stat-num { color:#ef4444; }
+.stat-label { font-size:13px; opacity:.8; margin-top:4px; }
+
+.badge.danger { background:#dc2626; color:#fff; }
+.row-fail td { background:rgba(220,38,38,.08); }
+.hint { font-size:12px; opacity:.7; margin-top:8px; }
+
+/* ===== Print ===== */
+.print-header { display:none; }
+@media print {
+  body, .layout, .content, .main { background:#fff !important; color:#000 !important; }
+  .sidebar, .topbar, .no-print, nav, .filters-bar, button { display:none !important; }
+  .print-header { display:block; text-align:center; margin-bottom:15px; }
+  .print-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .print-table th, .print-table td { border:1px solid #000; padding:4px; color:#000 !important; }
+  .print-table thead th { background:#ddd !important; }
+  .row-fail td { background:#fee !important; }
+  .badge { border:1px solid #000; padding:1px 6px; }
+}

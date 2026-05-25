@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}إحصائيات عامة{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>📊 الإحصائيات العامة</h1>
+  <a href="{{ url_for('reports_page') }}" class="btn-link">⬅️ رجوع</a>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-num">{{ total }}</div><div class="stat-label">إجمالي الطلاب</div></div>
+  <div class="stat-card ok"><div class="stat-num">{{ pass_count }}</div><div class="stat-label">ناجح</div></div>
+  <div class="stat-card danger"><div class="stat-num">{{ fail_count }}</div><div class="stat-label">راسب</div></div>
+  <div class="stat-card"><div class="stat-num">{{ pass_rate }}%</div><div class="stat-label">نسبة النجاح</div></div>
+  <div class="stat-card"><div class="stat-num">{{ avg }}</div><div class="stat-label">متوسط الدرجات</div></div>
+  <div class="stat-card"><div class="stat-num">{{ total_absences }}</div><div class="stat-label">إجمالي أيام الغياب</div></div>
+</div>
+
+<div class="card">
+  <h3>📚 حسب المستوى</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>المستوى</th><th>الإجمالي</th><th>ناجح</th><th>راسب</th><th>النسبة</th></tr></thead>
+      <tbody>
+        {% for lvl, d in by_level %}
+        <tr>
+          <td><b>{{ lvl }}</b></td>
+          <td>{{ d.total }}</td>
+          <td><span class="badge ok">{{ d.pass }}</span></td>
+          <td><span class="badge danger">{{ d.fail }}</span></td>
+          <td>{% if d.total %}{{ (d['pass'] / d.total * 100) | round(1) }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>👥 حسب الكروب</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>الكروب</th><th>الإجمالي</th><th>ناجح</th><th>راسب</th><th>النسبة</th></tr></thead>
+      <tbody>
+        {% for grp, d in by_group %}
+        <tr>
+          <td><b>{{ grp }}</b></td>
+          <td>{{ d.total }}</td>
+          <td><span class="badge ok">{{ d.pass }}</span></td>
+          <td><span class="badge danger">{{ d.fail }}</span></td>
+          <td>{% if d.total %}{{ (d['pass'] / d.total * 100) | round(1) }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

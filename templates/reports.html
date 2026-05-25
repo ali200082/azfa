@@ -6,6 +6,31 @@
   <a href="{{ url_for('reports_export', q=q, level=level, group=group) }}" class="btn-success">📥 تصدير Excel</a>
 </div>
 
+<div class="report-tiles">
+  <a class="tile" href="{{ url_for('final_grades') }}">
+    <div class="tile-icon">🎓</div>
+    <div class="tile-title">تقرير النشر</div>
+    <div class="tile-sub">الدرجات النهائية للطباعة</div>
+  </a>
+  <a class="tile" href="{{ url_for('statistics_report') }}">
+    <div class="tile-icon">📊</div>
+    <div class="tile-title">إحصائيات عامة</div>
+    <div class="tile-sub">ناجح/راسب حسب المستوى والكروب</div>
+  </a>
+  <a class="tile" href="{{ url_for('failing_report') }}">
+    <div class="tile-icon">⚠️</div>
+    <div class="tile-title">الراسبون</div>
+    <div class="tile-sub">قائمة الطلاب الراسبين</div>
+  </a>
+  <a class="tile" href="{{ url_for('absence_report') }}">
+    <div class="tile-icon">🚫</div>
+    <div class="tile-title">تقرير الغياب</div>
+    <div class="tile-sub">الطلاب الأكثر غياباً</div>
+  </a>
+</div>
+
+<h3 style="margin-top:20px;">🔍 بحث وتصفية الطلاب</h3>
+
 <form method="get" class="filters-bar">
   <input name="q" value="{{ q }}" placeholder="🔍 بحث بالاسم">
   <select name="level">

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}تقرير الغياب{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🚫 تقرير الغياب ({{ students|length }})</h1>
+  <a href="{{ url_for('reports_page') }}" class="btn-link">⬅️ رجوع</a>
+</div>
+
+{% if students %}
+<div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
+      <th>أيام الغياب</th><th>درجة الحضور</th>
+    </tr></thead>
+    <tbody>
+      {% for s in students %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ s.get('الكود', '') }}</td>
+        <td><b>{{ s.get('الاسم', '') }}</b></td>
+        <td>{{ s.get('المستوى', '') }}</td>
+        <td>{{ s.get('الكروب', '') }}</td>
+        <td><span class="badge danger">{{ s._absences }}</span></td>
+        <td>{{ s.get('درجة الحضور', 20) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">✅ لا يوجد طلاب لديهم غياب</p>
+{% endif %}
+{% endblock %}

@@ -24,12 +24,22 @@
     <label>النشاط <small>(0-10)</small>
       <input type="number" name="النشاط" min="0" max="10" step="0.5" value="{{ student.get('النشاط', 0) }}" required>
     </label>
+    {% if is_admin %}
     <label>الشفهي <small>(0-20)</small>
       <input type="number" name="الشفهي" min="0" max="20" step="0.5" value="{{ student.get('الشفهي', 0) }}" required>
     </label>
     <label>التحريري <small>(0-60)</small>
       <input type="number" name="التحريري" min="0" max="60" step="0.5" value="{{ student.get('التحريري', 0) }}" required>
     </label>
+    {% else %}
+    <label>الشفهي <small>(للعرض فقط — المدير)</small>
+      <input type="number" value="{{ student.get('الشفهي', 0) }}" disabled>
+    </label>
+    <label>التحريري <small>(للعرض فقط — المدير)</small>
+      <input type="number" value="{{ student.get('التحريري', 0) }}" disabled>
+    </label>
+    <p class="hint">👨‍🏫 الأستاذ يدخل درجة النشاط فقط. الشفهي والتحريري من صلاحية المدير.</p>
+    {% endif %}
     <button class="btn-primary">💾 حفظ الدرجات</button>
   </form>
 </div>

@@ -640,6 +640,27 @@ def api_schools():
     return jsonify(list_schools())
 
 
+@app.route("/api/groups")
+@login_required
+def api_groups():
+    """يرجع الكروبات المتوفرة في مستوى معيّن (لتعبئة القوائم ديناميكياً)."""
+    school_id = current_school_id()
+    if not school_id:
+        return jsonify([])
+    level = request.args.get("level", "").strip()
+    students_all = load_students(school_id)
+    groups = set()
+    for s in students_all:
+        if not isinstance(s, dict):
+            continue
+        if level and str(s.get("المستوى", "")) != level:
+            continue
+        g = str(s.get("الكروب", "")).strip()
+        if g:
+            groups.add(g)
+    return jsonify(sorted(groups))
+
+
 @app.route("/health")
 def health():
     schools = list_schools()
@@ -784,10 +805,15 @@ def grades_page():
         selected = get_student(school_id, sid_q)
 
     if request.method == "POST" and selected:
+        # الأستاذ يدخل النشاط فقط — المدير/المطور يدخل كل الدرجات
         try:
-            nashat = float(request.form.get("النشاط", 0) or 0)
-            shafahi = float(request.form.get("الشفهي", 0) or 0)
-            tahriri = float(request.form.get("التحريري", 0) or 0)
+            nashat = float(request.form.get("النشاط", selected.get("النشاط", 0)) or 0)
+            if _is_admin():
+                shafahi = float(request.form.get("الشفهي", selected.get("الشفهي", 0)) or 0)
+                tahriri = float(request.form.get("التحريري", selected.get("التحريري", 0)) or 0)
+            else:
+                shafahi = float(selected.get("الشفهي", 0) or 0)
+                tahriri = float(selected.get("التحريري", 0) or 0)
         except ValueError:
             flash("الدرجات يجب أن تكون أرقاماً", "error")
             return render_template("grades.html", student=selected)
@@ -963,6 +989,140 @@ def student_report(sid):
                            present_days=present_days, absent_days=absent_days)
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 🟢 تقرير النشر (الدرجات النهائية) — للطباعة
+# ═══════════════════════════════════════════════════════════════════
+@app.route("/reports/final")
+@login_required
+def final_grades():
+    """تقرير الدرجات النهائية (للنشر والطباعة)."""
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    level = request.args.get("level", "").strip()
+    group = request.args.get("group", "").strip()
+
+    all_students = _filter_by_scope(load_students(school_id))
+    students = list(all_students)
+    if level:
+        students = [s for s in students if str(s.get("المستوى", "")) == level]
+    if group:
+        students = [s for s in students if str(s.get("الكروب", "")) == group]
+    students.sort(key=lambda s: (str(s.get("المستوى", "")), str(s.get("الكروب", "")), str(s.get("الكود", ""))))
+
+    for s in students:
+        s["_total"] = _calc_total(s)
+        s["_result"] = "ناجح" if s["_total"] >= 60 else "راسب"
+
+    pass_count = sum(1 for s in students if s["_result"] == "ناجح")
+    fail_count = len(students) - pass_count
+
+    levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
+    groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
+
+    return render_template("final_grades.html",
+                           students=students, level=level, group=group,
+                           levels=levels, groups=groups,
+                           pass_count=pass_count, fail_count=fail_count,
+                           today=datetime.now().strftime("%Y-%m-%d"))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 🟢 تقرير إحصائي (عدد الطلاب / الناجحين / الراسبين حسب المستوى)
+# ═══════════════════════════════════════════════════════════════════
+@app.route("/reports/statistics")
+@login_required
+def statistics_report():
+    """تقرير إحصائي عام على مستوى المدرسة."""
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    students_all = _filter_by_scope(load_students(school_id))
+    total = len(students_all)
+    pass_count = 0
+    fail_count = 0
+    sum_total = 0.0
+    by_level = {}
+    by_group = {}
+    total_absences = 0
+
+    for s in students_all:
+        t = _calc_total(s)
+        sum_total += t
+        result = "ناجح" if t >= 60 else "راسب"
+        if result == "ناجح":
+            pass_count += 1
+        else:
+            fail_count += 1
+        try:
+            total_absences += int(float(s.get("غياب", 0) or 0))
+        except (TypeError, ValueError):
+            pass
+        lvl = str(s.get("المستوى", "غير محدد"))
+        grp = str(s.get("الكروب", "غير محدد"))
+        by_level.setdefault(lvl, {"total": 0, "pass": 0, "fail": 0})
+        by_level[lvl]["total"] += 1
+        by_level[lvl]["pass" if result == "ناجح" else "fail"] += 1
+        by_group.setdefault(grp, {"total": 0, "pass": 0, "fail": 0})
+        by_group[grp]["total"] += 1
+        by_group[grp]["pass" if result == "ناجح" else "fail"] += 1
+
+    avg = (sum_total / total) if total else 0
+    pass_rate = (pass_count / total * 100) if total else 0
+
+    return render_template("statistics.html",
+                           total=total, pass_count=pass_count, fail_count=fail_count,
+                           avg=round(avg, 2), pass_rate=round(pass_rate, 1),
+                           total_absences=total_absences,
+                           by_level=sorted(by_level.items()),
+                           by_group=sorted(by_group.items()))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 🟢 تقرير الراسبين فقط
+# ═══════════════════════════════════════════════════════════════════
+@app.route("/reports/failing")
+@login_required
+def failing_report():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+    all_students = _filter_by_scope(load_students(school_id))
+    failing = []
+    for s in all_students:
+        t = _calc_total(s)
+        if t < 60:
+            s["_total"] = t
+            failing.append(s)
+    failing.sort(key=lambda s: s["_total"])
+    return render_template("failing_report.html", students=failing)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 🟢 تقرير الغياب
+# ═══════════════════════════════════════════════════════════════════
+@app.route("/reports/absence")
+@login_required
+def absence_report():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+    students = _filter_by_scope(load_students(school_id))
+    rows = []
+    for s in students:
+        try:
+            a = int(float(s.get("غياب", 0) or 0))
+        except (TypeError, ValueError):
+            a = 0
+        if a > 0:
+            s["_absences"] = a
+            rows.append(s)
+    rows.sort(key=lambda s: s["_absences"], reverse=True)
+    return render_template("absence_report.html", students=rows)
+
+
 # ════════════════════════════════════════════════════════════════════
 # 🟢 توزيع قاعات الامتحان
 # ════════════════════════════════════════════════════════════════════
@@ -1026,7 +1186,11 @@ def teachers_page():
             password = request.form.get("password", "")
             role = request.form.get("role", "teacher")
             assigned_level = request.form.get("assigned_level", "").strip()
-            assigned_groups = [g.strip() for g in request.form.get("assigned_groups", "").split(",") if g.strip()]
+            # دعم الإرسال المتعدد من <select multiple> أو نص مفصول بفواصل
+            ag_list = request.form.getlist("assigned_groups")
+            if len(ag_list) == 1 and "," in ag_list[0]:
+                ag_list = ag_list[0].split(",")
+            assigned_groups = [g.strip() for g in ag_list if g and g.strip()]
             if not username or not password:
                 flash("اسم المستخدم وكلمة المرور مطلوبان", "error")
             else:

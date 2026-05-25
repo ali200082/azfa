@@ -13,14 +13,46 @@
       <option value="teacher">أستاذ</option>
       <option value="admin">مدير</option>
     </select>
-    <select name="assigned_level">
+    <select name="assigned_level" id="assigned_level_sel">
       <option value="">كل المستويات</option>
       {% for l in levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
     </select>
-    <input name="assigned_groups" placeholder="الكروبات مفصولة بفاصلة (مثل: G1,G2)">
+    <select name="assigned_groups" id="assigned_groups_sel" multiple size="4">
+      <option value="" disabled>اختر المستوى أولاً</option>
+    </select>
     <button class="btn-primary">إضافة</button>
   </form>
+  <p class="hint">💡 اختر المستوى ثم اختر الكروبات (Ctrl+Click للاختيار المتعدد). اترك الحقول فارغة للوصول إلى جميع الطلاب.</p>
 </div>
+
+<script>
+(function () {
+  const levelSel = document.getElementById('assigned_level_sel');
+  const groupSel = document.getElementById('assigned_groups_sel');
+  async function refreshGroups() {
+    const level = levelSel.value;
+    groupSel.innerHTML = '<option value="" disabled>جاري التحميل...</option>';
+    try {
+      const r = await fetch('/api/groups?level=' + encodeURIComponent(level));
+      const groups = await r.json();
+      if (!groups.length) {
+        groupSel.innerHTML = '<option value="" disabled>لا توجد كروبات</option>';
+        return;
+      }
+      groupSel.innerHTML = '';
+      groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        groupSel.appendChild(opt);
+      });
+    } catch (e) {
+      groupSel.innerHTML = '<option value="" disabled>خطأ في التحميل</option>';
+    }
+  }
+  levelSel.addEventListener('change', refreshGroups);
+})();
+</script>
 
 <div class="card">
   <h3>قائمة المستخدمين الحاليين ({{ users|length }})</h3>

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}الراسبون{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>⚠️ تقرير الراسبين ({{ students|length }})</h1>
+  <a href="{{ url_for('reports_page') }}" class="btn-link">⬅️ رجوع</a>
+</div>
+
+{% if students %}
+<div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
+      <th>المجموع</th><th>إجراءات</th>
+    </tr></thead>
+    <tbody>
+      {% for s in students %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ s.get('الكود', '') }}</td>
+        <td><b>{{ s.get('الاسم', '') }}</b></td>
+        <td>{{ s.get('المستوى', '') }}</td>
+        <td>{{ s.get('الكروب', '') }}</td>
+        <td><span class="badge danger">{{ s._total }}</span></td>
+        <td><a href="{{ url_for('student_report', sid=s.get('id') or s.get('الكود')) }}" class="btn-link">📑 التقرير</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">🎉 لا يوجد طلاب راسبون</p>
+{% endif %}
+{% endblock %}

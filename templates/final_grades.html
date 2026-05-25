@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}تقرير النشر — الدرجات النهائية{% endblock %}
+{% block content %}
+<div class="page-header no-print">
+  <h1>🎓 تقرير النشر — الدرجات النهائية</h1>
+  <button onclick="window.print()" class="btn-primary">🖨️ طباعة / حفظ PDF</button>
+</div>
+
+<form method="get" class="filters-bar no-print">
+  <select name="level">
+    <option value="">كل المستويات</option>
+    {% for l in levels %}<option value="{{ l }}" {% if l==level %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="group">
+    <option value="">كل الكروبات</option>
+    {% for g in groups %}<option value="{{ g }}" {% if g==group %}selected{% endif %}>{{ g }}</option>{% endfor %}
+  </select>
+  <button class="btn-primary">عرض</button>
+</form>
+
+<div class="print-header">
+  <h2>تقرير النشر — الدرجات النهائية</h2>
+  <p>المستوى: <b>{{ level or 'الكل' }}</b> — الكروب: <b>{{ group or 'الكل' }}</b> — التاريخ: {{ today }}</p>
+  <p>إجمالي: <b>{{ students|length }}</b> — ناجح: <b>{{ pass_count }}</b> — راسب: <b>{{ fail_count }}</b></p>
+</div>
+
+<div class="table-wrap">
+  <table class="print-table">
+    <thead>
+      <tr>
+        <th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
+        <th>الحضور</th><th>النشاط</th><th>الشفهي</th><th>التحريري</th>
+        <th>المجموع</th><th>النتيجة</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in students %}
+      <tr class="{% if s._result == 'راسب' %}row-fail{% else %}row-pass{% endif %}">
+        <td>{{ loop.index }}</td>
+        <td>{{ s.get('الكود', '') }}</td>
+        <td><b>{{ s.get('الاسم', '') }}</b></td>
+        <td>{{ s.get('المستوى', '') }}</td>
+        <td>{{ s.get('الكروب', '') }}</td>
+        <td>{{ s.get('درجة الحضور', 0) }}</td>
+        <td>{{ s.get('النشاط', 0) }}</td>
+        <td>{{ s.get('الشفهي', 0) }}</td>
+        <td>{{ s.get('التحريري', 0) }}</td>
+        <td><b>{{ s._total }}</b></td>
+        <td><span class="badge {% if s._result=='ناجح' %}ok{% else %}danger{% endif %}">{{ s._result }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if not students %}<p class="empty">لا توجد بيانات للعرض</p>{% endif %}
+{% endblock %}
