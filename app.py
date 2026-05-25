@@ -488,6 +488,518 @@ def health():
     })
 
 
+# ════════════════════════════════════════════════════════════════════
+# 🟢 تسجيل الحضور والغياب
+# ════════════════════════════════════════════════════════════════════
+def _attendance_score(absences):
+    """نفس صيغة البرنامج: 20 - (الغياب / 2)، بحد أدنى 0"""
+    try:
+        return max(0, 20 - (float(absences or 0) / 2))
+    except (TypeError, ValueError):
+        return 20
+
+
+@app.route("/attendance", methods=["GET", "POST"])
+@login_required
+def attendance_page():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    all_students = load_students(school_id)
+    levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
+    groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
+
+    sel_level = request.args.get("level", "").strip() or request.form.get("level", "").strip()
+    sel_group = request.args.get("group", "").strip() or request.form.get("group", "").strip()
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # تصفية الطلاب حسب المستوى والكروب
+    filtered = all_students
+    if sel_level:
+        filtered = [s for s in filtered if str(s.get("المستوى", "")) == sel_level]
+    if sel_group:
+        filtered = [s for s in filtered if str(s.get("الكروب", "")) == sel_group]
+
+    # POST: تسجيل الحضور
+    if request.method == "POST":
+        action = request.form.get("action", "")  # present | absent
+        student_ids = request.form.getlist("students")
+        if not student_ids:
+            flash("لم تحدد أي طالب", "error")
+        else:
+            success = 0
+            already = 0
+            for sid in student_ids:
+                stu = get_student(school_id, sid)
+                if not stu:
+                    continue
+                log = stu.get("سجل_الحضور", [])
+                if not isinstance(log, list):
+                    log = []
+                # تحقق إذا تم تسجيله اليوم
+                already_today = any(
+                    isinstance(e, dict) and str(e.get("التاريخ", "")).startswith(today)
+                    for e in log
+                )
+                if already_today:
+                    already += 1
+                    continue
+                log.append({
+                    "التاريخ": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "الحالة": "حاضر" if action == "present" else "غائب",
+                })
+                stu["سجل_الحضور"] = log
+                if action == "absent":
+                    stu["غياب"] = int(stu.get("غياب", 0) or 0) + 1
+                stu["درجة الحضور"] = _attendance_score(stu.get("غياب", 0))
+                stu.pop("id", None)
+                save_student(school_id, sid, stu)
+                success += 1
+            if success:
+                flash(f"تم تسجيل {success} طالب ✓" + (f" (تم تجاهل {already} مسجلين مسبقاً)" if already else ""), "success")
+            elif already:
+                flash(f"كل الطلاب المحددين مسجلين اليوم بالفعل", "error")
+
+        # تحديث القائمة بعد التسجيل
+        all_students = load_students(school_id)
+        filtered = all_students
+        if sel_level:
+            filtered = [s for s in filtered if str(s.get("المستوى", "")) == sel_level]
+        if sel_group:
+            filtered = [s for s in filtered if str(s.get("الكروب", "")) == sel_group]
+
+    # الطلاب غير المسجلين اليوم
+    unrecorded = []
+    for s in filtered:
+        log = s.get("سجل_الحضور", [])
+        if not isinstance(log, list):
+            log = []
+        is_today = any(
+            isinstance(e, dict) and str(e.get("التاريخ", "")).startswith(today)
+            for e in log
+        )
+        if not is_today:
+            unrecorded.append(s)
+
+    return render_template("attendance.html",
+                           students=sorted(unrecorded, key=lambda s: str(s.get("الكود", ""))),
+                           levels=levels, groups=groups,
+                           sel_level=sel_level, sel_group=sel_group,
+                           today=today)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 إدخال الدرجات
+# ════════════════════════════════════════════════════════════════════
+@app.route("/grades", methods=["GET", "POST"])
+@login_required
+def grades_page():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    sid_q = request.args.get("sid", "").strip()
+    code_q = request.args.get("code", "").strip()
+    selected = None
+
+    # البحث بالكود
+    if code_q and not sid_q:
+        for s in load_students(school_id):
+            if str(s.get("الكود", "")) == code_q:
+                selected = s
+                sid_q = s.get("id")
+                break
+        if not selected:
+            flash(f"لا يوجد طالب بالكود {code_q}", "error")
+
+    if sid_q and not selected:
+        selected = get_student(school_id, sid_q)
+
+    if request.method == "POST" and selected:
+        try:
+            nashat = float(request.form.get("النشاط", 0) or 0)
+            shafahi = float(request.form.get("الشفهي", 0) or 0)
+            tahriri = float(request.form.get("التحريري", 0) or 0)
+        except ValueError:
+            flash("الدرجات يجب أن تكون أرقاماً", "error")
+            return render_template("grades.html", student=selected)
+
+        # تحقق من الحدود (مثل البرنامج)
+        if not (0 <= nashat <= 10):
+            flash("النشاط يجب أن يكون بين 0 و 10", "error")
+        elif not (0 <= shafahi <= 20):
+            flash("الشفهي يجب أن يكون بين 0 و 20", "error")
+        elif not (0 <= tahriri <= 60):
+            flash("التحريري يجب أن يكون بين 0 و 60", "error")
+        else:
+            selected["النشاط"] = nashat
+            selected["الشفهي"] = shafahi
+            selected["التحريري"] = tahriri
+            selected["درجة الحضور"] = _attendance_score(selected.get("غياب", 0))
+            sid_actual = selected.pop("id", sid_q)
+            if save_student(school_id, sid_actual, selected):
+                flash(f"تم حفظ درجات {selected.get('الاسم', '')} ✓", "success")
+                return redirect(url_for("grades_page", sid=sid_actual))
+            flash("فشل الحفظ", "error")
+
+    if selected:
+        selected["_total"] = _calc_total(selected)
+    return render_template("grades.html", student=selected, code_q=code_q)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 التقارير + تصدير Excel
+# ════════════════════════════════════════════════════════════════════
+@app.route("/reports")
+@login_required
+def reports_page():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    q = request.args.get("q", "").strip()
+    level = request.args.get("level", "").strip()
+    group = request.args.get("group", "").strip()
+
+    all_students = load_students(school_id)
+    students = list(all_students)
+    if q:
+        ql = q.lower()
+        students = [s for s in students if ql in str(s.get("الاسم", "")).lower()]
+    if level:
+        students = [s for s in students if str(s.get("المستوى", "")) == level]
+    if group:
+        students = [s for s in students if str(s.get("الكروب", "")) == group]
+
+    # ترتيب: مستوى ← كروب ← كود
+    def _sort_key(s):
+        return (str(s.get("المستوى", "")), str(s.get("الكروب", "")), str(s.get("الكود", "")))
+    students.sort(key=_sort_key)
+
+    for s in students:
+        s["_total"] = _calc_total(s)
+        s["_result"] = "ناجح" if s["_total"] >= 60 else "راسب"
+
+    levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
+    groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
+
+    return render_template("reports.html",
+                           students=students, q=q, level=level, group=group,
+                           levels=levels, groups=groups)
+
+
+@app.route("/reports/export")
+@login_required
+def reports_export():
+    """تصدير Excel للتقرير الحالي (يقبل نفس فلاتر /reports)."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from io import BytesIO
+        from flask import send_file
+    except ImportError:
+        flash("مكتبة Excel غير متوفرة على السيرفر", "error")
+        return redirect(url_for("reports_page"))
+
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    q = request.args.get("q", "").strip()
+    level = request.args.get("level", "").strip()
+    group = request.args.get("group", "").strip()
+
+    students = load_students(school_id)
+    if q:
+        ql = q.lower()
+        students = [s for s in students if ql in str(s.get("الاسم", "")).lower()]
+    if level:
+        students = [s for s in students if str(s.get("المستوى", "")) == level]
+    if group:
+        students = [s for s in students if str(s.get("الكروب", "")) == group]
+    students.sort(key=lambda s: (str(s.get("المستوى", "")), str(s.get("الكروب", "")), str(s.get("الكود", ""))))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "التقرير"
+    ws.sheet_view.rightToLeft = True
+
+    headers = ["الكود", "الاسم", "المستوى", "الكروب", "غياب",
+               "درجة الحضور", "النشاط", "الشفهي", "التحريري", "المجموع", "النتيجة"]
+    ws.append(headers)
+    head_fill = PatternFill("solid", fgColor="0d6efd")
+    head_font = Font(color="FFFFFF", bold=True, size=12)
+    thin = Side(style="thin", color="888888")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center")
+
+    for i, _ in enumerate(headers, 1):
+        c = ws.cell(row=1, column=i)
+        c.fill = head_fill
+        c.font = head_font
+        c.alignment = center
+        c.border = border
+
+    for r, s in enumerate(students, 2):
+        total = _calc_total(s)
+        result = "ناجح" if total >= 60 else "راسب"
+        row = [s.get("الكود", ""), s.get("الاسم", ""), s.get("المستوى", ""),
+               s.get("الكروب", ""), s.get("غياب", 0), s.get("درجة الحضور", 0),
+               s.get("النشاط", 0), s.get("الشفهي", 0), s.get("التحريري", 0),
+               total, result]
+        for i, val in enumerate(row, 1):
+            c = ws.cell(row=r, column=i, value=val)
+            c.alignment = center
+            c.border = border
+            if i == 11:  # النتيجة
+                c.fill = PatternFill("solid", fgColor="d1e7dd" if result == "ناجح" else "f8d7da")
+
+    # عرض الأعمدة
+    widths = [10, 25, 12, 10, 8, 12, 10, 10, 10, 10, 10]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/reports/student/<sid>")
+@login_required
+def student_report(sid):
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+    student = get_student(school_id, sid)
+    if not student:
+        flash("الطالب غير موجود", "error")
+        return redirect(url_for("reports_page"))
+
+    student["_total"] = _calc_total(student)
+    student["_result"] = "ناجح" if student["_total"] >= 60 else "راسب"
+    log = student.get("سجل_الحضور", [])
+    if not isinstance(log, list):
+        log = []
+    present_days = sum(1 for e in log if isinstance(e, dict) and e.get("الحالة") == "حاضر")
+    absent_days = sum(1 for e in log if isinstance(e, dict) and e.get("الحالة") == "غائب")
+    return render_template("student_report.html", student=student,
+                           log=list(reversed(log)),
+                           present_days=present_days, absent_days=absent_days)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 توزيع قاعات الامتحان
+# ════════════════════════════════════════════════════════════════════
+@app.route("/exam-halls", methods=["GET", "POST"])
+@login_required
+def exam_halls():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    all_students = load_students(school_id)
+    levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
+    groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
+
+    sel_levels = request.values.getlist("levels")
+    sel_groups = request.values.getlist("groups")
+    pages = []
+
+    if sel_levels or sel_groups:
+        chosen = all_students
+        if sel_levels:
+            chosen = [s for s in chosen if str(s.get("المستوى", "")) in sel_levels]
+        if sel_groups:
+            chosen = [s for s in chosen if str(s.get("الكروب", "")) in sel_groups]
+
+        # خلط أو ترتيب
+        if len(sel_groups) > 1 or len(sel_levels) > 1:
+            import random
+            random.shuffle(chosen)
+        else:
+            chosen.sort(key=lambda s: str(s.get("الكود", "")), reverse=True)
+
+        # 18 طالب لكل صفحة
+        PER_PAGE = 18
+        for i in range(0, len(chosen), PER_PAGE):
+            pages.append(chosen[i:i + PER_PAGE])
+
+    return render_template("exam_halls.html",
+                           levels=levels, groups=groups,
+                           sel_levels=sel_levels, sel_groups=sel_groups,
+                           pages=pages,
+                           total=sum(len(p) for p in pages))
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 إدارة الأساتذة (مدير المدرسة فقط)
+# ════════════════════════════════════════════════════════════════════
+def _is_admin():
+    return session.get("role") == "admin" or session.get("is_developer")
+
+
+@app.route("/teachers", methods=["GET", "POST"])
+@login_required
+def teachers_page():
+    if not _is_admin():
+        flash("هذه الصفحة للمديرين فقط", "error")
+        return redirect(url_for("index"))
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        username = request.form.get("username", "").strip()
+        if action == "add":
+            password = request.form.get("password", "")
+            role = request.form.get("role", "teacher")
+            assigned_level = request.form.get("assigned_level", "").strip()
+            assigned_groups = [g.strip() for g in request.form.get("assigned_groups", "").split(",") if g.strip()]
+            if not username or not password:
+                flash("اسم المستخدم وكلمة المرور مطلوبان", "error")
+            else:
+                fb_put(f"schools/{school_id}/users_info/{username}", {
+                    "pwd_hash": _sha256(password),
+                    "role": role,
+                    "assigned_level": assigned_level,
+                    "assigned_groups": assigned_groups,
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "created_by": session.get("username"),
+                })
+                flash(f"تمت إضافة المستخدم {username} ✓", "success")
+        elif action == "delete":
+            if username == session.get("username"):
+                flash("لا يمكنك حذف حسابك الحالي", "error")
+            else:
+                fb_delete(f"schools/{school_id}/users_info/{username}")
+                flash(f"تم حذف {username} ✓", "success")
+        elif action == "reset_pass":
+            new_pass = request.form.get("new_password", "")
+            if username and new_pass:
+                fb_patch(f"schools/{school_id}/users_info/{username}", {
+                    "pwd_hash": _sha256(new_pass),
+                })
+                flash(f"تم تحديث كلمة مرور {username} ✓", "success")
+        return redirect(url_for("teachers_page"))
+
+    users_data = fb_get(f"schools/{school_id}/users_info") or {}
+    users = []
+    if isinstance(users_data, dict):
+        for u, info in users_data.items():
+            if isinstance(info, dict):
+                users.append({
+                    "username": u,
+                    "role": info.get("role", "teacher"),
+                    "assigned_level": info.get("assigned_level", ""),
+                    "assigned_groups": info.get("assigned_groups", []),
+                    "created_at": info.get("created_at", ""),
+                })
+    users.sort(key=lambda x: x["username"])
+
+    all_students = load_students(school_id)
+    levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
+    return render_template("teachers.html", users=users, levels=levels)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 إعدادات الحساب (تغيير كلمة المرور)
+# ════════════════════════════════════════════════════════════════════
+@app.route("/account", methods=["GET", "POST"])
+@login_required
+def account_page():
+    if request.method == "POST":
+        old = request.form.get("old_password", "")
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        if not new or new != confirm:
+            flash("كلمة المرور الجديدة غير متطابقة", "error")
+        elif len(new) < 4:
+            flash("كلمة المرور قصيرة جداً (4 أحرف فأكثر)", "error")
+        else:
+            username = session.get("username")
+            sid = session.get("school_id")
+            if session.get("is_developer"):
+                flash("لا يمكن تغيير كلمة المطور من الويب — استخدم البرنامج الأصلي", "error")
+            elif sid and username:
+                user_info = fb_get(f"schools/{sid}/users_info/{username}")
+                if isinstance(user_info, dict) and user_info.get("pwd_hash") == _sha256(old):
+                    fb_patch(f"schools/{sid}/users_info/{username}", {"pwd_hash": _sha256(new)})
+                    flash("تم تغيير كلمة المرور ✓", "success")
+                else:
+                    flash("كلمة المرور الحالية غير صحيحة", "error")
+            else:
+                flash("لا يمكن تغيير كلمة المرور لهذا الحساب", "error")
+    return render_template("account.html")
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 صفحة الدعم
+# ════════════════════════════════════════════════════════════════════
+@app.route("/support")
+@login_required
+def support_page():
+    return render_template("support.html")
+
+
+# ════════════════════════════════════════════════════════════════════
+# 🟢 لوحة المطور (إدارة الجامعات/المدارس)
+# ════════════════════════════════════════════════════════════════════
+@app.route("/dev/dashboard", methods=["GET", "POST"])
+@developer_required
+def dev_dashboard():
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add_school":
+            school_id = request.form.get("school_id", "").strip()
+            school_name = request.form.get("school_name", "").strip()
+            if not school_id or not school_name:
+                flash("الرجاء إدخال معرّف واسم الجامعة", "error")
+            else:
+                fb_put(f"schools/{school_id}", {
+                    "school_name": school_name,
+                    "students_count": 0,
+                    "active": True,
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "created_by": session.get("username"),
+                })
+                flash(f"تمت إضافة الجامعة {school_name} ✓", "success")
+        elif action == "delete_school":
+            school_id = request.form.get("school_id", "").strip()
+            if school_id:
+                fb_delete(f"schools/{school_id}")
+                flash(f"تم حذف الجامعة {school_id} ✓", "success")
+        elif action == "toggle_school":
+            school_id = request.form.get("school_id", "").strip()
+            active = request.form.get("active") == "1"
+            fb_patch(f"schools/{school_id}", {"active": active})
+            flash("تم تحديث الحالة ✓", "success")
+        return redirect(url_for("dev_dashboard"))
+
+    # جمع التفاصيل
+    data = fb_get("schools") or {}
+    schools = []
+    if isinstance(data, dict):
+        for sid, info in data.items():
+            if not isinstance(info, dict):
+                continue
+            users = info.get("users_info", {}) or {}
+            schools.append({
+                "id": sid,
+                "name": info.get("school_name", sid),
+                "count": info.get("students_count", 0),
+                "active": info.get("active", True),
+                "last_updated": info.get("last_updated", ""),
+                "users_count": len(users) if isinstance(users, dict) else 0,
+            })
+    schools.sort(key=lambda x: str(x["name"]))
+    return render_template("dev_dashboard.html", schools=schools)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"\n🌐 افتح المتصفح على: http://localhost:{port}")

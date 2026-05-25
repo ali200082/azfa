@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}قاعات الامتحان{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🏛️ توزيع قاعات الامتحان</h1>
+  {% if pages %}<button onclick="window.print()" class="btn-primary">🖨️ طباعة</button>{% endif %}
+</div>
+
+<form method="post" class="card no-print">
+  <h3>اختر المستويات والكروبات:</h3>
+  <div class="checks-row">
+    <div>
+      <h4>المستويات</h4>
+      {% for l in levels %}
+      <label><input type="checkbox" name="levels" value="{{ l }}" {% if l in sel_levels %}checked{% endif %}> {{ l }}</label>
+      {% endfor %}
+    </div>
+    <div>
+      <h4>الكروبات</h4>
+      {% for g in groups %}
+      <label><input type="checkbox" name="groups" value="{{ g }}" {% if g in sel_groups %}checked{% endif %}> {{ g }}</label>
+      {% endfor %}
+    </div>
+  </div>
+  <button class="btn-primary">📋 عرض التوزيع</button>
+</form>
+
+{% if pages %}
+<div class="exam-summary no-print">إجمالي الطلاب: <b>{{ total }}</b> | عدد الصفحات: <b>{{ pages|length }}</b></div>
+
+{% for page in pages %}
+<div class="exam-page">
+  <h2>قاعة الامتحان — صفحة {{ loop.index }}/{{ pages|length }}</h2>
+  <table class="exam-table">
+    <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th><th>التوقيع</th></tr></thead>
+    <tbody>
+      {% for s in page %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ s.get('الكود', '') }}</td>
+        <td>{{ s.get('الاسم', '') }}</td>
+        <td>{{ s.get('المستوى', '') }}</td>
+        <td>{{ s.get('الكروب', '') }}</td>
+        <td></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

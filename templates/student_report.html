@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}تقرير الطالب{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>📑 تقرير الطالب</h1>
+  <a href="{{ url_for('reports_page') }}" class="btn-link">← العودة</a>
+</div>
+
+<div class="card">
+  <h2>{{ student.get('الاسم', '') }}</h2>
+  <div class="info-grid">
+    <div><span>الكود:</span> <b>{{ student.get('الكود', '') }}</b></div>
+    <div><span>المستوى:</span> <b>{{ student.get('المستوى', '') }}</b></div>
+    <div><span>الكروب:</span> <b>{{ student.get('الكروب', '') }}</b></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>📊 الدرجات</h3>
+  <div class="info-grid">
+    <div><span>عدد الغياب:</span> <b>{{ student.get('غياب', 0) }}</b></div>
+    <div><span>درجة الحضور:</span> <b>{{ student.get('درجة الحضور', 0) }}/20</b></div>
+    <div><span>النشاط:</span> <b>{{ student.get('النشاط', 0) }}/10</b></div>
+    <div><span>الشفهي:</span> <b>{{ student.get('الشفهي', 0) }}/20</b></div>
+    <div><span>التحريري:</span> <b>{{ student.get('التحريري', 0) }}/60</b></div>
+    <div><span>المجموع:</span> <b>{{ student._total }}/110</b></div>
+    <div><span>النتيجة:</span>
+      <span class="badge {% if student._result=='ناجح' %}ok{% else %}fail{% endif %}">{{ student._result }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>📅 سجل الحضور والغياب</h3>
+  <p>أيام الحضور: <b>{{ present_days }}</b> | أيام الغياب: <b>{{ absent_days }}</b></p>
+  {% if log %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>التاريخ</th><th>الحالة</th></tr></thead>
+      <tbody>
+        {% for e in log %}
+        <tr>
+          <td>{{ e.get('التاريخ', '') }}</td>
+          <td>
+            <span class="badge {% if e.get('الحالة')=='حاضر' %}ok{% else %}fail{% endif %}">
+              {{ e.get('الحالة', '') }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">لا يوجد سجل حضور بعد</p>
+  {% endif %}
+</div>
+{% endblock %}

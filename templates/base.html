@@ -20,7 +20,6 @@
           {% if is_developer %}
             <a href="{{ url_for('schools_page') }}" class="btn-link-light">تبديل</a>
           {% endif %}
-          <a href="{{ url_for('new_student') }}" class="btn-primary">+ طالب جديد</a>
         {% elif is_developer %}
           <a href="{{ url_for('schools_page') }}">اختر مدرسة</a>
         {% endif %}
@@ -30,11 +29,39 @@
           </span>
           <a href="{{ url_for('logout') }}" class="btn-logout" title="تسجيل خروج">خروج</a>
         {% endif %}
+        <button class="menu-toggle" onclick="document.body.classList.toggle('sidebar-open')" aria-label="القائمة">☰</button>
       </nav>
     </div>
   </header>
 
-  <main class="container">
+  {% if current_user %}
+  <aside class="sidebar">
+    <nav>
+      <a href="{{ url_for('index') }}" class="menu-item">📋 <span>قائمة الطلاب</span></a>
+      {% if current_school %}
+        <a href="{{ url_for('new_student') }}" class="menu-item">➕ <span>إضافة طالب</span></a>
+        <a href="{{ url_for('attendance_page') }}" class="menu-item">✅ <span>تسجيل الحضور</span></a>
+        <a href="{{ url_for('grades_page') }}" class="menu-item">📊 <span>إدخال الدرجات</span></a>
+        <a href="{{ url_for('reports_page') }}" class="menu-item">📄 <span>التقارير</span></a>
+        <a href="{{ url_for('exam_halls') }}" class="menu-item">🏛️ <span>قاعات الامتحان</span></a>
+        {% if current_role == 'admin' or is_developer %}
+          <a href="{{ url_for('teachers_page') }}" class="menu-item">👥 <span>إدارة المستخدمين</span></a>
+        {% endif %}
+      {% endif %}
+      <a href="{{ url_for('account_page') }}" class="menu-item">⚙️ <span>الإعدادات</span></a>
+      <a href="{{ url_for('support_page') }}" class="menu-item">📞 <span>دعم</span></a>
+      {% if is_developer %}
+        <hr>
+        <a href="{{ url_for('dev_dashboard') }}" class="menu-item dev">🌐 <span>لوحة المطور</span></a>
+        <a href="{{ url_for('schools_page') }}" class="menu-item dev">🏫 <span>تبديل الجامعة</span></a>
+      {% endif %}
+      <hr>
+      <a href="{{ url_for('logout') }}" class="menu-item logout">🚪 <span>تسجيل الخروج</span></a>
+    </nav>
+  </aside>
+  {% endif %}
+
+  <main class="container{% if current_user %} with-sidebar{% endif %}">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <div class="flash-area">

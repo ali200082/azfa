@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}الإعدادات{% endblock %}
+{% block content %}
+<div class="page-header"><h1>⚙️ إعدادات الحساب</h1></div>
+
+<div class="card">
+  <h3>معلومات الحساب</h3>
+  <div class="info-grid">
+    <div><span>اسم المستخدم:</span> <b>{{ current_user }}</b></div>
+    <div><span>الدور:</span> <b>{{ current_role or 'مستخدم' }}</b></div>
+    {% if current_school %}<div><span>الجامعة:</span> <b>{{ current_school.name }}</b></div>{% endif %}
+    {% if is_developer %}<div><span>النوع:</span> <b>👑 مطور</b></div>{% endif %}
+  </div>
+</div>
+
+{% if not is_developer %}
+<div class="card">
+  <h3>🔑 تغيير كلمة المرور</h3>
+  <form method="post" class="grades-form">
+    <label>كلمة المرور الحالية
+      <input type="password" name="old_password" required>
+    </label>
+    <label>كلمة المرور الجديدة
+      <input type="password" name="new_password" required minlength="4">
+    </label>
+    <label>تأكيد كلمة المرور الجديدة
+      <input type="password" name="confirm_password" required minlength="4">
+    </label>
+    <button class="btn-primary">💾 حفظ التغييرات</button>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <p>👑 أنت مسجّل كمطور — لتغيير كلمة المطور استخدم البرنامج الأصلي على الحاسوب.</p>
+</div>
+{% endif %}
+{% endblock %}

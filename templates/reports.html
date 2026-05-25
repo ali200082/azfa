@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}التقارير{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>📄 التقارير والإحصائيات</h1>
+  <a href="{{ url_for('reports_export', q=q, level=level, group=group) }}" class="btn-success">📥 تصدير Excel</a>
+</div>
+
+<form method="get" class="filters-bar">
+  <input name="q" value="{{ q }}" placeholder="🔍 بحث بالاسم">
+  <select name="level">
+    <option value="">كل المستويات</option>
+    {% for l in levels %}<option value="{{ l }}" {% if l==level %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="group">
+    <option value="">كل الكروبات</option>
+    {% for g in groups %}<option value="{{ g }}" {% if g==group %}selected{% endif %}>{{ g }}</option>{% endfor %}
+  </select>
+  <button class="btn-primary">عرض</button>
+</form>
+
+<p>عدد النتائج: <b>{{ students|length }}</b></p>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
+        <th>غياب</th><th>حضور</th><th>نشاط</th><th>شفهي</th><th>تحريري</th>
+        <th>المجموع</th><th>النتيجة</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in students %}
+      <tr>
+        <td>{{ s.get('الكود', '') }}</td>
+        <td><b>{{ s.get('الاسم', '') }}</b></td>
+        <td>{{ s.get('المستوى', '') }}</td>
+        <td>{{ s.get('الكروب', '') }}</td>
+        <td>{{ s.get('غياب', 0) }}</td>
+        <td>{{ s.get('درجة الحضور', 0) }}</td>
+        <td>{{ s.get('النشاط', 0) }}</td>
+        <td>{{ s.get('الشفهي', 0) }}</td>
+        <td>{{ s.get('التحريري', 0) }}</td>
+        <td><b>{{ s._total }}</b></td>
+        <td><span class="badge {% if s._result=='ناجح' %}ok{% else %}fail{% endif %}">{{ s._result }}</span></td>
+        <td><a href="{{ url_for('student_report', sid=s.id) }}" class="btn-link">📑 تفاصيل</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

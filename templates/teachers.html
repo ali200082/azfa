@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}إدارة المستخدمين{% endblock %}
+{% block content %}
+<div class="page-header"><h1>👥 إدارة المستخدمين والأساتذة</h1></div>
+
+<div class="card">
+  <h3>➕ إضافة مستخدم جديد</h3>
+  <form method="post" class="form-row">
+    <input type="hidden" name="action" value="add">
+    <input name="username" placeholder="اسم المستخدم" required>
+    <input name="password" type="password" placeholder="كلمة المرور" required>
+    <select name="role">
+      <option value="teacher">أستاذ</option>
+      <option value="admin">مدير</option>
+    </select>
+    <select name="assigned_level">
+      <option value="">كل المستويات</option>
+      {% for l in levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+    </select>
+    <input name="assigned_groups" placeholder="الكروبات مفصولة بفاصلة (مثل: G1,G2)">
+    <button class="btn-primary">إضافة</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>قائمة المستخدمين الحاليين ({{ users|length }})</h3>
+  {% if users %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>الاسم</th><th>الدور</th><th>المستوى</th><th>الكروبات</th><th>تاريخ الإنشاء</th><th>إجراءات</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><b>{{ u.username }}</b></td>
+          <td><span class="badge {% if u.role=='admin' %}ok{% else %}info{% endif %}">{{ u.role }}</span></td>
+          <td>{{ u.assigned_level or '—' }}</td>
+          <td>{{ u.assigned_groups|join(', ') if u.assigned_groups else '—' }}</td>
+          <td>{{ u.created_at or '—' }}</td>
+          <td class="actions">
+            <details>
+              <summary class="btn-link">🔑 تغيير كلمة المرور</summary>
+              <form method="post" class="inline-form">
+                <input type="hidden" name="action" value="reset_pass">
+                <input type="hidden" name="username" value="{{ u.username }}">
+                <input name="new_password" type="password" placeholder="كلمة المرور الجديدة" required>
+                <button class="btn-primary">حفظ</button>
+              </form>
+            </details>
+            <form method="post" class="inline-form" onsubmit="return confirm('حذف {{ u.username }}؟');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <button class="btn-danger">🗑️ حذف</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">لا يوجد مستخدمون مسجلون بعد</p>
+  {% endif %}
+</div>
+{% endblock %}

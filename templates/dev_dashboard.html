@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}لوحة المطور{% endblock %}
+{% block content %}
+<div class="page-header"><h1>🌐 لوحة المطور — إدارة الجامعات</h1></div>
+
+<div class="card">
+  <h3>➕ إضافة جامعة جديدة</h3>
+  <form method="post" class="form-row">
+    <input type="hidden" name="action" value="add_school">
+    <input name="school_id" placeholder="معرّف الجامعة (ID فريد بالإنجليزية)" required>
+    <input name="school_name" placeholder="اسم الجامعة" required>
+    <button class="btn-primary">إضافة</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>الجامعات المسجلة ({{ schools|length }})</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>المعرّف</th><th>الاسم</th><th>عدد الطلاب</th><th>المستخدمون</th><th>آخر تحديث</th><th>الحالة</th><th>إجراءات</th></tr>
+      </thead>
+      <tbody>
+        {% for s in schools %}
+        <tr>
+          <td><code>{{ s.id }}</code></td>
+          <td><b>{{ s.name }}</b></td>
+          <td>{{ s.count }}</td>
+          <td>{{ s.users_count }}</td>
+          <td>{{ s.last_updated or '—' }}</td>
+          <td>
+            <span class="badge {% if s.active %}ok{% else %}fail{% endif %}">
+              {{ 'مفعّلة' if s.active else 'معطّلة' }}
+            </span>
+          </td>
+          <td class="actions">
+            <a href="{{ url_for('select_school', school_id=s.id) }}" class="btn-link">🔓 دخول</a>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="toggle_school">
+              <input type="hidden" name="school_id" value="{{ s.id }}">
+              <input type="hidden" name="active" value="{{ '0' if s.active else '1' }}">
+              <button class="btn-link">{{ '⏸️ تعطيل' if s.active else '▶️ تفعيل' }}</button>
+            </form>
+            <form method="post" class="inline-form" onsubmit="return confirm('تحذير! سيتم حذف الجامعة {{ s.name }} مع كل بياناتها نهائياً!');">
+              <input type="hidden" name="action" value="delete_school">
+              <input type="hidden" name="school_id" value="{{ s.id }}">
+              <button class="btn-danger">🗑️</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
