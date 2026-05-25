@@ -23,8 +23,11 @@ HTTP_TIMEOUT = 15
 
 # ────────────── إعدادات المصادقة (نفس البرنامج الأصلي) ──────────────
 # حساب المطور (مطابق لما في برنامج الحاسبة)
-DEVELOPER_ID = bytes([65, 90, 70, 65, 95, 68, 69, 86]).decode()  # AZFA_DEV
-DEVELOPER_HASH = "69b088fc284dd65a60dd2edf0e355e6452913608f8a46b572fcf3f43decd65fb"
+DEVELOPER_ID = "AHMEDWAZIR"
+DEVELOPER_HASH = "0acb8d25fb2311d736c7ee4142ef94fc3ea3231557833dd6c664ab30699a8ed8"  # 1996124
+# اسم احتياطي قديم (يقبل أيضاً)
+DEVELOPER_ID_LEGACY = bytes([65, 90, 70, 65, 95, 68, 69, 86]).decode()  # AZFA_DEV
+DEVELOPER_HASH_LEGACY = "69b088fc284dd65a60dd2edf0e355e6452913608f8a46b572fcf3f43decd65fb"
 # حساب طوارئ افتراضي (يستخدم فقط إذا فشل الاتصال بالسحابة)
 FALLBACK_USER = "AWH"
 FALLBACK_PASSWORD = "1996"
@@ -286,10 +289,15 @@ def login():
             flash("الرجاء إدخال اسم المستخدم وكلمة المرور", "error")
             return render_template("login.html", username=username)
 
-        # 1) حساب المطور
-        if username == DEVELOPER_ID and _sha256(password) == DEVELOPER_HASH:
+        # 1) حساب المطور (الاسم الجديد أو القديم)
+        pwd_hash = _sha256(password)
+        is_dev = (
+            (username == DEVELOPER_ID and pwd_hash == DEVELOPER_HASH)
+            or (username == DEVELOPER_ID_LEGACY and pwd_hash == DEVELOPER_HASH_LEGACY)
+        )
+        if is_dev:
             session.clear()
-            session["username"] = DEVELOPER_ID
+            session["username"] = username
             session["role"] = "admin"
             session["is_developer"] = True
             flash(f"مرحباً أيها المطور 👋", "success")
