@@ -1164,6 +1164,7 @@ def exam_halls():
 
     return render_template("exam_halls.html",
                            levels=levels, groups=groups,
+                           groups_by_level=groups_by_level,
                            sel_levels=sel_levels, sel_groups=sel_groups,
                            pages=pages,
                            total=sum(len(p) for p in pages))

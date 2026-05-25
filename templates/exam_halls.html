@@ -12,18 +12,61 @@
     <div>
       <h4>المستويات</h4>
       {% for l in levels %}
-      <label><input type="checkbox" name="levels" value="{{ l }}" {% if l in sel_levels %}checked{% endif %}> {{ l }}</label>
+      <label><input type="checkbox" class="lvl-check" name="levels" value="{{ l }}" {% if l in sel_levels %}checked{% endif %}> {{ l }}</label>
       {% endfor %}
     </div>
     <div>
       <h4>الكروبات</h4>
-      {% for g in groups %}
-      <label><input type="checkbox" name="groups" value="{{ g }}" {% if g in sel_groups %}checked{% endif %}> {{ g }}</label>
-      {% endfor %}
+      <div id="groups-box">
+        {% for g in groups %}
+        <label class="grp-item" data-groups="{{ g }}"><input type="checkbox" name="groups" value="{{ g }}" {% if g in sel_groups %}checked{% endif %}> {{ g }}</label>
+        {% endfor %}
+      </div>
+      <p id="groups-empty" class="hint" style="display:none;">اختر مستوى لعرض كروباته</p>
     </div>
   </div>
   <button class="btn-primary">📋 عرض التوزيع</button>
 </form>
+
+<script>
+(function () {
+  const groupsByLevel = {{ groups_by_level|tojson }};
+  const lvlChecks = document.querySelectorAll('.lvl-check');
+  const grpItems = document.querySelectorAll('.grp-item');
+  const emptyMsg = document.getElementById('groups-empty');
+
+  function refresh() {
+    const selected = Array.from(lvlChecks).filter(c => c.checked).map(c => c.value);
+    // اجمع الكروبات الخاصة بالمستويات المختارة
+    let allowed = new Set();
+    if (selected.length === 0) {
+      // لا شيء مختار → اعرض الكل
+      grpItems.forEach(it => it.style.display = '');
+      emptyMsg.style.display = 'none';
+      return;
+    }
+    selected.forEach(lvl => {
+      (groupsByLevel[lvl] || []).forEach(g => allowed.add(g));
+    });
+    let visibleCount = 0;
+    grpItems.forEach(it => {
+      const g = it.getAttribute('data-groups');
+      if (allowed.has(g)) {
+        it.style.display = '';
+        visibleCount++;
+      } else {
+        it.style.display = 'none';
+        const inp = it.querySelector('input');
+        if (inp) inp.checked = false;
+      }
+    });
+    emptyMsg.style.display = visibleCount === 0 ? '' : 'none';
+  }
+
+  lvlChecks.forEach(c => c.addEventListener('change', refresh));
+  refresh();
+})();
+</script>
 
 {% if pages %}
 <div class="exam-summary no-print">إجمالي الطلاب: <b>{{ total }}</b> | عدد الصفحات: <b>{{ pages|length }}</b></div>
