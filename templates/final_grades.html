@@ -24,13 +24,14 @@
   <p>إجمالي: <b>{{ students|length }}</b> — ناجح: <b>{{ pass_count }}</b> — راسب: <b>{{ fail_count }}</b></p>
 </div>
 
+{% set pass_label = 'مقبول' if lang == 'fa' else 'ناجح' %}
+{% set fail_label = 'مردود' if lang == 'fa' else 'راسب' %}
+
 <div class="table-wrap">
   <table class="print-table">
     <thead>
       <tr>
-        <th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th>
-        <th>الحضور</th><th>النشاط</th><th>الشفهي</th><th>التحريري</th>
-        <th>المجموع</th><th>النتيجة</th>
+        <th>#</th><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th><th>النتيجة</th>
       </tr>
     </thead>
     <tbody>
@@ -41,12 +42,9 @@
         <td><b>{{ s.get('الاسم', '') }}</b></td>
         <td>{{ s.get('المستوى', '') }}</td>
         <td>{{ s.get('الكروب', '') }}</td>
-        <td>{{ s.get('درجة الحضور', 0) }}</td>
-        <td>{{ s.get('النشاط', 0) }}</td>
-        <td>{{ s.get('الشفهي', 0) }}</td>
-        <td>{{ s.get('التحريري', 0) }}</td>
-        <td><b>{{ s._total }}</b></td>
-        <td><span class="badge {% if s._result=='ناجح' %}ok{% else %}danger{% endif %}">{{ s._result }}</span></td>
+        <td><span class="badge {% if s._result=='ناجح' %}ok{% else %}danger{% endif %}">
+          {% if s._result == 'ناجح' %}{{ pass_label }}{% else %}{{ fail_label }}{% endif %}
+        </span></td>
       </tr>
       {% endfor %}
     </tbody>
