@@ -921,7 +921,7 @@ def reports_export():
     ws.title = "التقرير"
     ws.sheet_view.rightToLeft = True
 
-    headers = ["الكود", "الاسم", "المستوى", "الكروب", "غياب",
+    headers = ["الكود", "الاسم", "المستوى", "الكروب",
                "درجة الحضور", "النشاط", "الشفهي", "التحريري", "المجموع", "النتيجة"]
     ws.append(headers)
     head_fill = PatternFill("solid", fgColor="0d6efd")
@@ -941,18 +941,18 @@ def reports_export():
         total = _calc_total(s)
         result = "ناجح" if total >= 60 else "راسب"
         row = [s.get("الكود", ""), s.get("الاسم", ""), s.get("المستوى", ""),
-               s.get("الكروب", ""), s.get("غياب", 0), s.get("درجة الحضور", 0),
+               s.get("الكروب", ""), s.get("درجة الحضور", 0),
                s.get("النشاط", 0), s.get("الشفهي", 0), s.get("التحريري", 0),
                total, result]
         for i, val in enumerate(row, 1):
             c = ws.cell(row=r, column=i, value=val)
             c.alignment = center
             c.border = border
-            if i == 11:  # النتيجة
+            if i == 10:  # النتيجة
                 c.fill = PatternFill("solid", fgColor="d1e7dd" if result == "ناجح" else "f8d7da")
 
     # عرض الأعمدة
-    widths = [10, 25, 12, 10, 8, 12, 10, 10, 10, 10, 10]
+    widths = [10, 25, 12, 10, 12, 10, 10, 10, 10, 10]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
