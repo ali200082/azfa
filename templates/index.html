@@ -16,8 +16,8 @@
 
 <section class="stats-grid" aria-label="ملخص الطلاب">
   <div class="stat-tile"><span class="stat-tile-icon">👥</span><span class="stat-tile-label">إجمالي الطلاب</span><strong>{{ total_count }}</strong><small>{% if active_course %}في الدورة المختارة{% else %}ضمن صلاحيات حسابك{% endif %}</small></div>
-  <div class="stat-tile stat-tile-success"><span class="stat-tile-icon">🎓</span><span class="stat-tile-label">ناجحون</span><strong>{{ pass_count }}</strong><small>مجموع 60 فأعلى</small></div>
-  <div class="stat-tile stat-tile-danger"><span class="stat-tile-icon">📈</span><span class="stat-tile-label">بحاجة للمتابعة</span><strong>{{ fail_count }}</strong><small>مجموع أقل من 60</small></div>
+  <div class="stat-tile stat-tile-success"><span class="stat-tile-icon">🎓</span><span class="stat-tile-label">ناجحون</span><strong>{{ pass_count }}</strong><small>مجموع {{ pass_mark }} فأعلى</small></div>
+  <div class="stat-tile stat-tile-danger"><span class="stat-tile-icon">📈</span><span class="stat-tile-label">بحاجة للمتابعة</span><strong>{{ fail_count }}</strong><small>مجموع أقل من {{ pass_mark }}</small></div>
 </section>
 
 <form method="get" class="filters card">

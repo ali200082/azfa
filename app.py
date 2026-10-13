@@ -22,6 +22,7 @@ from datetime import datetime
 FIREBASE_URL = "https://azfa-3ff21-default-rtdb.firebaseio.com"
 FIREBASE_URL_FALLBACK = "https://falling-haze-c742.ahmed-wazir-hlail.workers.dev"
 HTTP_TIMEOUT = 15
+PASSING_SCORE = 70
 
 # ────────────── الترجمة (العربية / الفارسية) ──────────────
 TRANSLATIONS = {
@@ -921,8 +922,9 @@ def index():
                            fields=STUDENT_FIELDS,
                            total_count=len(all_students),
                            active_course=active_course["course"] if active_course else None,
-                           pass_count=sum(1 for student in all_students if _calc_total(student) >= 60),
-                           fail_count=sum(1 for student in all_students if _calc_total(student) < 60))
+                           pass_mark=PASSING_SCORE,
+                           pass_count=sum(1 for student in all_students if _calc_total(student) >= PASSING_SCORE),
+                           fail_count=sum(1 for student in all_students if _calc_total(student) < PASSING_SCORE))
 
 
 @app.route("/schools")
@@ -1753,7 +1755,7 @@ def reports_page():
 
     for s in students:
         s["_total"] = _calc_total(s)
-        s["_result"] = "ناجح" if s["_total"] >= 60 else "راسب"
+        s["_result"] = "ناجح" if s["_total"] >= PASSING_SCORE else "راسب"
 
     levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
@@ -1818,7 +1820,7 @@ def reports_export():
 
     for r, s in enumerate(students, 2):
         total = _calc_total(s)
-        result = "ناجح" if total >= 60 else "راسب"
+        result = "ناجح" if total >= PASSING_SCORE else "راسب"
         row = [s.get("الكود", ""), s.get("الاسم", ""), s.get("المستوى", ""),
                s.get("الكروب", ""), s.get("درجة الحضور", 0),
                s.get("النشاط", 0), s.get("الشفهي", 0), s.get("التحريري", 0),
@@ -1863,7 +1865,7 @@ def student_report(sid):
         return redirect(url_for("reports_page"))
 
     student["_total"] = _calc_total(student)
-    student["_result"] = "ناجح" if student["_total"] >= 60 else "راسب"
+    student["_result"] = "ناجح" if student["_total"] >= PASSING_SCORE else "راسب"
     log = student.get("سجل_الحضور", [])
     if not isinstance(log, list):
         log = []
@@ -1899,7 +1901,7 @@ def final_grades():
 
     for s in students:
         s["_total"] = _calc_total(s)
-        s["_result"] = "ناجح" if s["_total"] >= 60 else "راسب"
+        s["_result"] = "ناجح" if s["_total"] >= PASSING_SCORE else "راسب"
 
     pass_count = sum(1 for s in students if s["_result"] == "ناجح")
     fail_count = len(students) - pass_count
@@ -1939,7 +1941,7 @@ def statistics_report():
     for s in students_all:
         t = _calc_total(s)
         sum_total += t
-        result = "ناجح" if t >= 60 else "راسب"
+        result = "ناجح" if t >= PASSING_SCORE else "راسب"
         if result == "ناجح":
             pass_count += 1
         else:

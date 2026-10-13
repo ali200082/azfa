@@ -359,6 +359,42 @@ class CourseWebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("طالب تجريبي".encode(), response.data)
 
+    def test_passing_score_matches_desktop_in_dashboard_and_reports(self):
+        school = self.firebase.data["schools"]["S1"]
+        school["students"]["student-1"].update({
+            "الاسم": "طالب ناجح عند 70",
+            "درجة الحضور": 20,
+            "النشاط": 10,
+            "الشفهي": 10,
+            "التحريري": 30,
+        })
+        school["students"]["student-2"] = {
+            "الكود": "1002",
+            "الاسم": "طالب راسب عند 69",
+            "المستوى": "اول",
+            "الكروب": "A",
+            "درجة الحضور": 20,
+            "النشاط": 10,
+            "الشفهي": 10,
+            "التحريري": 29,
+        }
+
+        dashboard = self.client.get("/")
+        dashboard_html = dashboard.data.decode()
+        self.assertIn("مجموع 70 فأعلى", dashboard_html)
+        self.assertIn("مجموع أقل من 70", dashboard_html)
+        self.assertIn('stat-tile-success"><span class="stat-tile-icon">🎓</span><span class="stat-tile-label">ناجحون</span><strong>1</strong>', dashboard_html)
+        self.assertIn('stat-tile-danger"><span class="stat-tile-icon">📈</span><span class="stat-tile-label">بحاجة للمتابعة</span><strong>1</strong>', dashboard_html)
+
+        for route in ("/reports", "/reports/final", "/reports/statistics"):
+            response = self.client.get(route)
+            self.assertEqual(response.status_code, 200, route)
+            html = response.data.decode()
+            passing_row = html.split("طالب ناجح عند 70", 1)[1].split("</tr>", 1)[0]
+            failing_row = html.split("طالب راسب عند 69", 1)[1].split("</tr>", 1)[0]
+            self.assertIn("ناجح", passing_row, route)
+            self.assertIn("راسب", failing_row, route)
+
     def test_teacher_cannot_manage_courses_or_select_unassigned_course(self):
         school = self.firebase.data["schools"]["S1"]
         school["courses"]["assigned"] = {
