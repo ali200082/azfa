@@ -29,16 +29,23 @@
 
       {% if step == 'credentials' %}
       <div class="login-school">
+        {% if developer_mode %}
+        <span>تسجيل دخول المطور</span>
+        <strong>الوصول إلى جميع المدارس</strong>
+        {% else %}
         <span>المدرسة</span>
         <strong>{{ school_name }}</strong>
+        {% endif %}
         <form method="post">
           <input type="hidden" name="action" value="change_school">
-          <button type="submit" class="login-change-school">تغيير المدرسة</button>
+          <button type="submit" class="login-change-school">
+            {{ 'العودة' if developer_mode else 'تغيير المدرسة' }}
+          </button>
         </form>
       </div>
       <form method="post" class="login-form" autocomplete="off">
         <input type="hidden" name="action" value="authenticate">
-        <label for="username">اسم المستخدم</label>
+        <label for="username">{{ 'اسم مستخدم المطور' if developer_mode else 'اسم المستخدم' }}</label>
         <input type="text" id="username" name="username"
                value="{{ username|default('') }}"
                autocomplete="username" autofocus required>
@@ -65,7 +72,11 @@
       {% endif %}
 
       <div class="login-footer">
+        {% if developer_mode %}
+        <small>حساب المطور يتيح إدارة المدارس والحسابات</small>
+        {% else %}
         <small>يستخدم نفس المدرسة وحسابات المستخدمين في النظام الأساسي</small>
+        {% endif %}
       </div>
     </div>
   </div>

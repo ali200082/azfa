@@ -186,6 +186,68 @@ class CourseWebTests(unittest.TestCase):
         with self.client.session_transaction() as current_session:
             self.assertNotIn("login_school_id", current_session)
 
+    def test_developer_username_in_school_step_opens_global_developer_login(self):
+        self._start_logged_out()
+
+        with patch.object(
+            web, "_fb_request", side_effect=AssertionError("Firebase must not be queried")
+        ):
+            response = self.client.post(
+                "/login",
+                data={"action": "select_school", "school": web.DEVELOPER_ID},
+            )
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as current_session:
+            self.assertTrue(current_session["login_developer_mode"])
+            self.assertNotIn("login_school_id", current_session)
+
+        response = self.client.get("/login")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("الوصول إلى جميع المدارس".encode(), response.data)
+        self.assertIn(
+            f'value="{web.DEVELOPER_ID}"'.encode(), response.data)
+
+        with patch.object(web, "DEVELOPER_HASH", web._sha256("developer-secret")):
+            response = self.client.post(
+                "/login",
+                data={
+                    "action": "authenticate",
+                    "username": web.DEVELOPER_ID,
+                    "password": "developer-secret",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/schools")
+        with self.client.session_transaction() as current_session:
+            self.assertTrue(current_session["is_developer"])
+            self.assertEqual(current_session["role"], "admin")
+            self.assertNotIn("school_id", current_session)
+
+        response = self.client.get("/schools")
+        self.assertEqual(response.status_code, 200)
+
+    def test_developer_mode_rejects_invalid_developer_credentials(self):
+        self._start_logged_out()
+        self.client.post(
+            "/login",
+            data={"action": "select_school", "school": web.DEVELOPER_ID_LEGACY},
+        )
+
+        response = self.client.post(
+            "/login",
+            data={
+                "action": "authenticate",
+                "username": web.DEVELOPER_ID_LEGACY,
+                "password": "wrong-password",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("بيانات حساب المطور غير صحيحة".encode(), response.data)
+        with self.client.session_transaction() as current_session:
+            self.assertNotIn("username", current_session)
+
     def test_course_creation_enrollment_attendance_and_grades_use_shared_paths(self):
         response = self.client.post(
             "/courses",

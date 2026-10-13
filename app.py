@@ -605,6 +605,14 @@ def _normalize_school_login_name(value):
     return " ".join(str(value or "").split()).casefold()
 
 
+def _is_developer_username(value):
+    username = str(value or "").strip().casefold()
+    return username in {
+        DEVELOPER_ID.casefold(),
+        DEVELOPER_ID_LEGACY.casefold(),
+    }
+
+
 def _find_login_school(school_input):
     response = _fb_request("GET", "schools", params={"shallow": "true"})
     if response is None or not response.ok:
@@ -679,6 +687,14 @@ def login():
         if not school_input:
             flash("اكتب اسم المدرسة أو رمزها", "error")
             return render_template("login.html", step="school", school_input="")
+        if _is_developer_username(school_input):
+            session["login_developer_mode"] = True
+            session["login_developer_username"] = school_input
+            session.pop("login_school_id", None)
+            session.pop("login_school_name", None)
+            session["login_next"] = (
+                request.form.get("next", "") or request.args.get("next", ""))
+            return redirect(url_for("login"))
         try:
             matches = _find_login_school(school_input)
         except (requests.RequestException, RuntimeError, ValueError) as error:
@@ -708,12 +724,15 @@ def login():
     if action == "change_school":
         session.pop("login_school_id", None)
         session.pop("login_school_name", None)
+        session.pop("login_developer_mode", None)
+        session.pop("login_developer_username", None)
         return redirect(url_for("login"))
 
     if action == "authenticate":
         school_id = str(session.get("login_school_id", "") or "")
         school_name = str(session.get("login_school_name", "") or "")
-        if not school_id:
+        developer_mode = bool(session.get("login_developer_mode"))
+        if not school_id and not developer_mode:
             flash("أدخل اسم المدرسة أولاً", "error")
             return redirect(url_for("login"))
 
@@ -723,23 +742,37 @@ def login():
             flash("اكتب اسم المستخدم وكلمة المرور", "error")
             return render_template(
                 "login.html", step="credentials", school_name=school_name,
-                username=username)
+                username=username, developer_mode=developer_mode)
 
         password_hash = _sha256(password)
+        developer_username = next(
+            (
+                developer_id
+                for developer_id in (DEVELOPER_ID, DEVELOPER_ID_LEGACY)
+                if username.casefold() == developer_id.casefold()
+            ),
+            None,
+        )
         is_developer = (
-            (username == DEVELOPER_ID and password_hash == DEVELOPER_HASH)
+            (developer_username == DEVELOPER_ID and password_hash == DEVELOPER_HASH)
             or (
-                username == DEVELOPER_ID_LEGACY
+                developer_username == DEVELOPER_ID_LEGACY
                 and password_hash == DEVELOPER_HASH_LEGACY
             )
         )
         if is_developer:
             session.clear()
-            session["username"] = username
+            session["username"] = developer_username
             session["role"] = "admin"
             session["is_developer"] = True
             flash("مرحباً أيها المطور", "success")
             return redirect(url_for("schools_page"))
+
+        if developer_mode:
+            flash("بيانات حساب المطور غير صحيحة", "error")
+            return render_template(
+                "login.html", step="credentials", school_name="",
+                username=username, developer_mode=True)
 
         try:
             active_response = _fb_request(
@@ -770,7 +803,7 @@ def login():
             flash("تعذر الاتصال بخادم الحسابات. حاول مرة أخرى بعد قليل.", "error")
             return render_template(
                 "login.html", step="credentials", school_name=school_name,
-                username=username)
+                username=username, developer_mode=False)
 
         if authenticated_school_id:
             next_path = session.get("login_next", "")
@@ -796,7 +829,13 @@ def login():
     if session.get("login_school_id"):
         return render_template(
             "login.html", step="credentials",
-            school_name=session.get("login_school_name", ""), username="")
+            school_name=session.get("login_school_name", ""), username="",
+            developer_mode=False)
+    if session.get("login_developer_mode"):
+        return render_template(
+            "login.html", step="credentials", school_name="",
+            username=session.get("login_developer_username", ""),
+            developer_mode=True)
     return render_template(
         "login.html", step="school", school_input="",
         next=request.args.get("next", ""))
