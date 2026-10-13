@@ -27,7 +27,17 @@
         {% endif %}
       {% endwith %}
 
+      {% if step == 'credentials' %}
+      <div class="login-school">
+        <span>المدرسة</span>
+        <strong>{{ school_name }}</strong>
+        <form method="post">
+          <input type="hidden" name="action" value="change_school">
+          <button type="submit" class="login-change-school">تغيير المدرسة</button>
+        </form>
+      </div>
       <form method="post" class="login-form" autocomplete="off">
+        <input type="hidden" name="action" value="authenticate">
         <label for="username">اسم المستخدم</label>
         <input type="text" id="username" name="username"
                value="{{ username|default('') }}"
@@ -42,9 +52,20 @@
 
         <button type="submit" class="btn-login">دخول</button>
       </form>
+      {% else %}
+      <form method="post" class="login-form" autocomplete="off">
+        <input type="hidden" name="action" value="select_school">
+        <input type="hidden" name="next" value="{{ next|default('') }}">
+        <label for="school">اسم المدرسة أو رمزها</label>
+        <input type="text" id="school" name="school"
+               value="{{ school_input|default('') }}"
+               autocomplete="organization" autofocus required>
+        <button type="submit" class="btn-login">متابعة</button>
+      </form>
+      {% endif %}
 
       <div class="login-footer">
-        <small>يستخدم نفس بيانات حسابك في برنامج الحاسبة</small>
+        <small>يستخدم نفس المدرسة وحسابات المستخدمين في النظام الأساسي</small>
       </div>
     </div>
   </div>

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}الدورات والتسجيلات{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>🗂️ الدورات والتسجيلات</h1>
+    <p class="muted">إدارة السنوات والدورات وتسجيل الطلاب والأساتذة.</p>
+  </div>
+  {% if can_modify_students %}
+  <a href="{{ url_for('download_backup') }}" class="btn-outline">💾 تنزيل نسخة احتياطية</a>
+  {% endif %}
+</div>
+
+{% if active_course_id %}
+<div class="active-course-banner">
+  <span>الدورة المستخدمة في الحضور والدرجات والتقارير: <strong>{{ active_course_label }}</strong></span>
+  <form method="post" action="{{ url_for('clear_active_course') }}">
+    <button class="btn-sm">العودة إلى السجل العام</button>
+  </form>
+</div>
+{% else %}
+<div class="hint-banner">اختر دورة نشطة لتسجيل حضورها ودرجاتها. اختيار الدورة خاص بهذه الجلسة ولا يغيّر اختيار البرنامج المكتبي.</div>
+{% endif %}
+
+<div class="course-layout">
+  <section class="card course-list-panel">
+    <div class="section-heading">
+      <div><h2>الدورات</h2><p class="muted">{{ courses|length }} دورة</p></div>
+    </div>
+    {% if can_modify_students %}
+    <form method="post" class="course-create-form">
+      <input type="hidden" name="action" value="add_course">
+      <label>السنة الميلادية
+        <input type="number" name="gregorian_year" min="1800" max="2300"
+               value="{{ academic_year.get('gregorian_year', current_year) }}" required>
+      </label>
+      <button class="btn-primary">＋ إنشاء دورة</button>
+    </form>
+    {% endif %}
+    <div class="course-list">
+      {% for course_id, course in courses %}
+      <a class="course-list-item{% if selected_id == course_id %} selected{% endif %}"
+         href="{{ url_for('courses_page', course=course_id) }}">
+        <span class="course-list-icon">📘</span>
+        <span class="course-list-copy">
+          <strong>{{ 'الدورة الدراسية %s-%02d'|format(course.get('gregorian_year', ''), course.get('sequence', 0)|int) }}</strong>
+          <small>{{ 'مؤرشفة' if course.get('archived') else 'نشطة' }} · {{ course.get('teacher_usernames', [])|length }} أستاذ</small>
+        </span>
+        {% if active_course_id == course_id %}<span class="badge ok">مختارة</span>{% endif %}
+      </a>
+      {% else %}
+      <div class="empty">لا توجد دورات بعد. أنشئ دورة جديدة للبدء.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="course-detail-panel">
+    {% if selected_course %}
+    <div class="card">
+      <div class="page-header course-detail-heading">
+        <div>
+          <span class="eyebrow">تفاصيل الدورة</span>
+          <h2>{{ 'الدورة الدراسية %s-%02d'|format(selected_course.get('gregorian_year', ''), selected_course.get('sequence', 0)|int) }}</h2>
+          <p class="muted">السنة {{ selected_course.get('gregorian_year', '') }} · {{ enrollments|length }} تسجيل</p>
+        </div>
+        {% if not selected_course.get('archived') %}
+        <form method="post" action="{{ url_for('select_course', course_id=selected_id) }}">
+          <button class="btn-primary">استخدام هذه الدورة</button>
+        </form>
+        {% else %}
+        <span class="badge info">مؤرشفة — للعرض فقط</span>
+        {% endif %}
+      </div>
+
+      {% if can_modify_students and not selected_course.get('archived') %}
+      <div class="course-actions-grid">
+        <form method="post" class="course-action-card">
+          <input type="hidden" name="action" value="enroll_student">
+          <input type="hidden" name="course_id" value="{{ selected_id }}">
+          <h3>تسجيل طالب</h3>
+          <label>الطالب
+            <select name="student_id" required>
+              <option value="">اختر طالبًا</option>
+              {% for student in students %}
+              <option value="{{ student.id }}">{{ student.get('الكود', '') }} · {{ student.get('الاسم', '') }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-row">
+            <label>المستوى<input name="level" placeholder="يُستخدم مستوى الطالب افتراضيًا"></label>
+            <label>الكروب<input name="group" placeholder="يُستخدم كروب الطالب افتراضيًا"></label>
+          </div>
+          <label>الأستاذ المسؤول
+            <select name="teacher">
+              <option value="">بدون تعيين</option>
+              {% for teacher in teachers %}<option value="{{ teacher }}">{{ teacher }}</option>{% endfor %}
+            </select>
+          </label>
+          <button class="btn-primary">إضافة التسجيل</button>
+        </form>
+
+        <form method="post" class="course-action-card">
+          <input type="hidden" name="action" value="assign_teachers">
+          <input type="hidden" name="course_id" value="{{ selected_id }}">
+          <h3>أساتذة الدورة</h3>
+          {% if teachers %}
+          <label>الحسابات المرتبطة
+            <select name="teacher_usernames" multiple size="5">
+              {% for teacher in teachers %}
+              <option value="{{ teacher }}" {% if teacher in selected_course.get('teacher_usernames', []) %}selected{% endif %}>{{ teacher }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <small class="muted">يمكن ربط حساب الأستاذ بسنة دراسية واحدة فقط.</small>
+          {% else %}
+          <p class="muted">أنشئ حساب أستاذ من صفحة إدارة المستخدمين أولًا.</p>
+          {% endif %}
+          <button class="btn-primary">حفظ الأساتذة</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if can_modify_students and not selected_course.get('archived') %}
+      <form method="post" class="archive-form"
+            onsubmit="return confirm('أرشفة الدورة؟ ستبقى بياناتها محفوظة للرجوع إليها.')">
+        <input type="hidden" name="action" value="archive_course">
+        <input type="hidden" name="course_id" value="{{ selected_id }}">
+        <button class="btn-sm btn-danger">أرشفة الدورة</button>
+      </form>
+      {% endif %}
+
+      <h3 class="table-heading">قائمة المسجلين</h3>
+      {% if enrollments %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>الكود</th><th>الاسم</th><th>المستوى</th><th>الكروب</th><th>الأستاذ</th>{% if can_modify_students and not selected_course.get('archived') %}<th>الإجراء</th>{% endif %}</tr></thead>
+          <tbody>
+            {% for enrollment_id, enrollment in enrollments %}
+            <tr>
+              <td>{{ enrollment.get('student_code', '') }}</td>
+              <td>{{ enrollment.get('student_name', '') }}</td>
+              <td>{{ enrollment.get('level', '') }}</td>
+              <td>{{ enrollment.get('group', '') }}</td>
+              <td>{{ enrollment.get('teacher', '') or '—' }}</td>
+              {% if can_modify_students and not selected_course.get('archived') %}
+              <td class="enrollment-actions">
+                <details>
+                  <summary class="btn-sm">تعديل</summary>
+                  <form method="post" class="enrollment-edit-form">
+                    <input type="hidden" name="action" value="edit_enrollment">
+                    <input type="hidden" name="course_id" value="{{ selected_id }}">
+                    <input type="hidden" name="enrollment_id" value="{{ enrollment_id }}">
+                    <label>المستوى<input name="level" value="{{ enrollment.get('level', '') }}" required></label>
+                    <label>الكروب<input name="group" value="{{ enrollment.get('group', '') }}"></label>
+                    <label>الأستاذ المسؤول
+                      <select name="teacher">
+                        <option value="">بدون تعيين</option>
+                        {% for teacher in teachers %}
+                        <option value="{{ teacher }}" {% if teacher == enrollment.get('teacher', '') %}selected{% endif %}>{{ teacher }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <button class="btn-primary">حفظ التعديل</button>
+                  </form>
+                </details>
+                <form method="post" onsubmit="return confirm('حذف تسجيل الطالب من هذه الدورة؟')">
+                  <input type="hidden" name="action" value="delete_enrollment">
+                  <input type="hidden" name="course_id" value="{{ selected_id }}">
+                  <input type="hidden" name="enrollment_id" value="{{ enrollment_id }}">
+                  <button class="btn-sm btn-danger">حذف</button>
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty compact">لا يوجد طلاب مسجلون في هذه الدورة.</div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card course-placeholder">
+      <div class="placeholder-mark">📚</div>
+      <h2>اختر دورة لعرض تفاصيلها</h2>
+      <p class="muted">يمكن للمدير إنشاء الدورات وربط الأساتذة وتسجيل الطلاب من هنا.</p>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

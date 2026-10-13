@@ -1,5 +1,5 @@
 // Service Worker بسيط للـ PWA
-const CACHE = 'azfa-v1';
+const CACHE = 'azfa-v3';
 const ASSETS = ['/static/style.css', '/static/manifest.json', '/static/icon.svg'];
 
 self.addEventListener('install', e => {

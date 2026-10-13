@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-  <meta name="theme-color" content="#0d6efd">
+  <meta name="theme-color" content="#12378d">
   <title>{% block title %}إدارة الطلاب{% endblock %} | AZFA</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
   <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
@@ -13,7 +13,7 @@
 <body>
   <header class="topbar">
     <div class="container">
-      <a href="{{ url_for('index') }}" class="brand">📚 إدارة الطلاب</a>
+      <a href="{{ url_for('index') }}" class="brand"><span class="brand-mark">A</span><span>AZFA <small>إدارة الطلاب</small></span></a>
       <nav>
         {% if current_school %}
           <span class="school-badge">🏫 {{ current_school.name }}</span>
@@ -29,7 +29,10 @@
           </span>
           <a href="{{ url_for('logout') }}" class="btn-logout" title="تسجيل خروج">خروج</a>
         {% endif %}
-        <button class="menu-toggle" onclick="document.body.classList.toggle('sidebar-open')" aria-label="القائمة">☰</button>
+        {% if active_course_label %}
+          <span class="course-badge">📚 {{ active_course_label }}</span>
+        {% endif %}
+        <button class="menu-toggle" id="menuToggle" aria-label="فتح القائمة" aria-expanded="false" aria-controls="sidebar">☰</button>
       </nav>
     </div>
   </header>
@@ -41,23 +44,29 @@
   {% endif %}
 
   {% if current_user %}
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-heading">
+      <span class="sidebar-avatar">{% if is_developer %}👑{% else %}{{ current_user[:1] }}{% endif %}</span>
+      <div><strong>{{ current_user }}</strong><small>{{ current_role or 'مستخدم' }}</small></div>
+    </div>
     <nav>
-      <a href="{{ url_for('index') }}" class="menu-item">📋 <span>{{ t('students_list') }}</span></a>
+      <a href="{{ url_for('index') }}" class="menu-item{% if request.endpoint == 'index' %} active{% endif %}">📋 <span>{{ t('students_list') }}</span></a>
       {% if current_school %}
         {% if can_modify_students %}
-          <a href="{{ url_for('new_student') }}" class="menu-item">➕ <span>{{ t('add_student') }}</span></a>
+          <a href="{{ url_for('new_student') }}" class="menu-item{% if request.endpoint == 'new_student' %} active{% endif %}">➕ <span>{{ t('add_student') }}</span></a>
         {% endif %}
-        <a href="{{ url_for('attendance_page') }}" class="menu-item">✅ <span>{{ t('attendance') }}</span></a>
-        <a href="{{ url_for('grades_page') }}" class="menu-item">📊 <span>{{ t('grades') }}</span></a>
-        <a href="{{ url_for('reports_page') }}" class="menu-item">📄 <span>{{ t('reports') }}</span></a>
-        <a href="{{ url_for('exam_halls') }}" class="menu-item">🏛️ <span>{{ t('exam_halls') }}</span></a>
+        <a href="{{ url_for('courses_page') }}" class="menu-item{% if request.endpoint in ('courses_page', 'select_course', 'clear_active_course') %} active{% endif %}">🗂️ <span>الدورات والتسجيلات</span></a>
+        <a href="{{ url_for('attendance_page') }}" class="menu-item{% if request.endpoint == 'attendance_page' %} active{% endif %}">✅ <span>{{ t('attendance') }}</span></a>
+        <a href="{{ url_for('grades_page') }}" class="menu-item{% if request.endpoint == 'grades_page' %} active{% endif %}">📊 <span>{{ t('grades') }}</span></a>
+        <a href="{{ url_for('reports_page') }}" class="menu-item{% if request.endpoint in ('reports_page', 'reports_export', 'student_report', 'final_grades', 'statistics_report', 'absence_report') %} active{% endif %}">📄 <span>{{ t('reports') }}</span></a>
+        <a href="{{ url_for('exam_halls') }}" class="menu-item{% if request.endpoint == 'exam_halls' %} active{% endif %}">🏛️ <span>{{ t('exam_halls') }}</span></a>
         {% if current_role == 'admin' or is_developer %}
-          <a href="{{ url_for('teachers_page') }}" class="menu-item">👥 <span>{{ t('users_mgmt') }}</span></a>
+          <a href="{{ url_for('teachers_page') }}" class="menu-item{% if request.endpoint == 'teachers_page' %} active{% endif %}">👥 <span>{{ t('users_mgmt') }}</span></a>
+          <a href="{{ url_for('download_backup') }}" class="menu-item">💾 <span>تنزيل نسخة احتياطية</span></a>
         {% endif %}
       {% endif %}
-      <a href="{{ url_for('account_page') }}" class="menu-item">⚙️ <span>{{ t('settings') }}</span></a>
-      <a href="{{ url_for('support_page') }}" class="menu-item">📞 <span>{{ t('support') }}</span></a>
+      <a href="{{ url_for('account_page') }}" class="menu-item{% if request.endpoint == 'account_page' %} active{% endif %}">⚙️ <span>{{ t('settings') }}</span></a>
+      <a href="{{ url_for('support_page') }}" class="menu-item{% if request.endpoint == 'support_page' %} active{% endif %}">📞 <span>{{ t('support') }}</span></a>
       {% if is_developer %}
         <hr>
         <a href="{{ url_for('dev_dashboard') }}" class="menu-item dev">🌐 <span>{{ t('dev_panel') }}</span></a>
@@ -71,6 +80,7 @@
   </aside>
   {% endif %}
 
+  <button class="sidebar-scrim" id="sidebarScrim" aria-label="إغلاق القائمة"></button>
   <main class="container{% if current_user %} with-sidebar{% endif %}">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -89,6 +99,25 @@
   </footer>
 
   <script>
+    const menuToggle = document.getElementById('menuToggle');
+    const sidebarScrim = document.getElementById('sidebarScrim');
+    function closeSidebar() {
+      document.body.classList.remove('sidebar-open');
+      if (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');
+    }
+    if (menuToggle) {
+      menuToggle.addEventListener('click', () => {
+        const open = document.body.classList.toggle('sidebar-open');
+        menuToggle.setAttribute('aria-expanded', String(open));
+      });
+    }
+    if (sidebarScrim) sidebarScrim.addEventListener('click', closeSidebar);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeSidebar();
+    });
+    document.querySelectorAll('.sidebar .menu-item').forEach(item => {
+      item.addEventListener('click', closeSidebar);
+    });
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('{{ url_for("static", filename="sw.js") }}')

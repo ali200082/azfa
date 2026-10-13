@@ -8,11 +8,12 @@
 - لا يعدل أي ملف من البرنامج الأصلي
 """
 from flask import (Flask, render_template, request, redirect, url_for,
-                   jsonify, flash, session)
+                   jsonify, flash, session, abort, send_file)
 import requests
 import uuid
 import os
 import hashlib
+import base64
 from functools import wraps
 from datetime import datetime
 
@@ -28,10 +29,6 @@ DEVELOPER_HASH = "0acb8d25fb2311d736c7ee4142ef94fc3ea3231557833dd6c664ab30699a8e
 # اسم احتياطي قديم (يقبل أيضاً)
 DEVELOPER_ID_LEGACY = bytes([65, 90, 70, 65, 95, 68, 69, 86]).decode()  # AZFA_DEV
 DEVELOPER_HASH_LEGACY = "69b088fc284dd65a60dd2edf0e355e6452913608f8a46b572fcf3f43decd65fb"
-# حساب طوارئ افتراضي (يستخدم فقط إذا فشل الاتصال بالسحابة)
-FALLBACK_USER = "AWH"
-FALLBACK_PASSWORD = "1996"
-
 # ────────────── الترجمة (العربية / الفارسية) ──────────────
 TRANSLATIONS = {
     "ar": {
@@ -389,10 +386,200 @@ def _calc_total(s):
         return 0
 
 
+def _firebase_json_required(path):
+    try:
+        response = _fb_request("GET", path)
+    except requests.RequestException as error:
+        raise RuntimeError(f"Firebase GET {path} failed: {error}") from error
+    if response is None or not response.ok:
+        status = response.status_code if response is not None else "unavailable"
+        raise RuntimeError(f"Firebase GET {path} failed ({status})")
+    try:
+        return response.json()
+    except ValueError as error:
+        raise RuntimeError(f"Firebase returned invalid JSON for {path}") from error
+
+
+def _load_course_data(school_id):
+    """Load course records from the Firebase paths used by the desktop app."""
+    values = {}
+    for key, path in (
+        ("courses", f"schools/{school_id}/courses"),
+        ("enrollments", f"schools/{school_id}/enrollments"),
+        ("academic_year", f"schools/{school_id}/course_settings/academic_year"),
+        ("sequence_counters", f"schools/{school_id}/course_settings/sequence_counters"),
+    ):
+        values[key] = _firebase_json_required(path)
+
+    return {
+        "courses": values["courses"] if isinstance(values["courses"], dict) else {},
+        "enrollments": values["enrollments"] if isinstance(values["enrollments"], dict) else {},
+        "academic_year": values["academic_year"] if isinstance(values["academic_year"], dict) else {},
+        "sequence_counters": values["sequence_counters"] if isinstance(values["sequence_counters"], dict) else {},
+    }
+
+
+def _save_course_record(school_id, record_type, record_id, record):
+    if record_type not in ("courses", "enrollments"):
+        raise ValueError("Invalid course record type")
+    return fb_put(f"schools/{school_id}/{record_type}/{record_id}", record)
+
+
+def _save_course_settings(school_id, academic_year, sequence_counters):
+    return fb_patch(f"schools/{school_id}/course_settings", {
+        "academic_year": academic_year,
+        "sequence_counters": sequence_counters,
+    })
+
+
+def _course_label(course):
+    return f"الدورة الدراسية {int(course.get('gregorian_year', 0))}-{int(course.get('sequence', 0)):02d}"
+
+
+def _course_level_key(value):
+    normalized = (
+        str(value or "").strip().casefold()
+        .replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+        .replace("ى", "ي")
+    )
+    return "اول" if normalized == "اولي" else normalized
+
+
+def _can_access_course(course, course_data):
+    if _is_admin():
+        return True
+    username = str(session.get("username", "")).strip().casefold()
+    if not username:
+        return False
+    assigned = course.get("teacher_usernames", [])
+    if isinstance(assigned, list) and any(str(name).strip().casefold() == username for name in assigned):
+        return True
+    return any(
+        isinstance(enrollment, dict)
+        and str(enrollment.get("course_id", "")) == str(course.get("course_id", ""))
+        and str(enrollment.get("teacher", "")).strip().casefold() == username
+        for enrollment in course_data.get("enrollments", {}).values()
+    )
+
+
+def _teacher_has_year_conflict(course_data, teacher_name, target_course_id):
+    target_course = course_data["courses"].get(target_course_id, {})
+    if not isinstance(target_course, dict):
+        return True
+    try:
+        target_year = int(target_course.get("gregorian_year", 0) or 0)
+    except (TypeError, ValueError):
+        return True
+    teacher_key = str(teacher_name).strip().casefold()
+    for course_id, course in course_data["courses"].items():
+        if not isinstance(course, dict) or str(course_id) == str(target_course_id):
+            continue
+        try:
+            different_year = int(course.get("gregorian_year", 0) or 0) != target_year
+        except (TypeError, ValueError):
+            continue
+        if not different_year:
+            continue
+        linked = any(
+            str(name).strip().casefold() == teacher_key
+            for name in (course.get("teacher_usernames") or [])
+        )
+        assigned_to_enrollment = any(
+            isinstance(enrollment, dict)
+            and str(enrollment.get("course_id", "")) == str(course_id)
+            and str(enrollment.get("teacher", "")).strip().casefold() == teacher_key
+            for enrollment in course_data["enrollments"].values()
+        )
+        if linked or assigned_to_enrollment:
+            return True
+    return False
+
+
+def _course_students(school_id, course_id, course_data=None, base_students=None):
+    course_data = course_data or _load_course_data(school_id)
+    base_students = base_students if base_students is not None else load_students(school_id)
+    course = course_data["courses"].get(str(course_id), {})
+    assigned_course_teachers = {
+        str(name).strip().casefold()
+        for name in (course.get("teacher_usernames") or [])
+    } if isinstance(course, dict) else set()
+    current_username = str(session.get("username", "")).strip().casefold()
+    students_by_code = {
+        str(student.get("الكود", "")).strip(): student
+        for student in base_students
+        if isinstance(student, dict) and str(student.get("الكود", "")).strip()
+    }
+    projected = []
+    for enrollment_id, enrollment in course_data["enrollments"].items():
+        if not isinstance(enrollment, dict) or str(enrollment.get("course_id", "")) != str(course_id):
+            continue
+        student = students_by_code.get(str(enrollment.get("student_code", "")).strip())
+        if not student:
+            continue
+        if not _is_admin():
+            assigned_teacher = str(enrollment.get("teacher", "")).strip().casefold()
+            if assigned_teacher and assigned_teacher != current_username:
+                continue
+            if not assigned_teacher and current_username not in assigned_course_teachers:
+                continue
+        view = dict(student)
+        view["المستوى"] = enrollment.get("level", student.get("المستوى", ""))
+        view["الكروب"] = enrollment.get("group", student.get("الكروب", ""))
+        view["سجل_الحضور"] = enrollment.get("attendance", [])
+        grades = enrollment.get("grades", {})
+        if not isinstance(grades, dict):
+            grades = {}
+        for field in ("غياب", "درجة الحضور", "النشاط", "الشفهي", "التحريري", "المجموع", "التقدير"):
+            view[field] = grades.get(field, 0)
+        view["_enrollment_id"] = enrollment_id
+        if _can_access_student(view):
+            projected.append(view)
+    return projected
+
+
+def _active_course_state(school_id, base_students=None):
+    course_id = str(session.get("active_course_id", "") or "")
+    if not course_id:
+        return None
+    try:
+        course_data = _load_course_data(school_id)
+    except RuntimeError:
+        raise
+    course = course_data["courses"].get(course_id)
+    if not isinstance(course, dict) or course.get("archived"):
+        session.pop("active_course_id", None)
+        session.pop("active_course_label", None)
+        return None
+    if not _can_access_course(course, course_data):
+        abort(403)
+    return {
+        "id": course_id,
+        "course": course,
+        "data": course_data,
+        "students": _course_students(
+            school_id, course_id, course_data=course_data,
+            base_students=base_students),
+    }
+
+
+def _course_state_or_abort(school_id, base_students=None):
+    try:
+        return _active_course_state(school_id, base_students)
+    except RuntimeError as error:
+        abort(503, description=f"تعذر قراءة بيانات الدورات من Firebase: {error}")
+
+
+def _visible_students(school_id):
+    base_students = load_students(school_id)
+    active_course = _course_state_or_abort(school_id, base_students)
+    students = active_course["students"] if active_course else _filter_by_scope(base_students)
+    return students, active_course
+
+
 # ────────────── السياق العام للقوالب ──────────────
 @app.context_processor
 def inject_globals():
-    schools = list_schools()
+    schools = list_schools() if session.get("username") else []
     sid = session.get("school_id")
     current = next((s for s in schools if s["id"] == sid), None)
     return {
@@ -408,83 +595,211 @@ def inject_globals():
         "lang": session.get("lang", "ar"),
         "t": _t,
         "is_demo": session.get("is_demo", False),
+        "active_course_id": session.get("active_course_id", ""),
+        "active_course_label": session.get("active_course_label", ""),
     }
 
 
 # ────────────── المصادقة (تسجيل الدخول/الخروج) ──────────────
-def cloud_authenticate(username, password):
-    """يبحث في كل المدارس عن المستخدم ويتحقق من كلمة السر.
-    يرجع: (school_id, role) أو (None, None)."""
-    pwd_hash = _sha256(password)
-    all_schools = fb_get("schools")
-    if not isinstance(all_schools, dict):
+def _normalize_school_login_name(value):
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _find_login_school(school_input):
+    response = _fb_request("GET", "schools", params={"shallow": "true"})
+    if response is None or not response.ok:
+        raise RuntimeError("تعذر تحميل قائمة المدارس")
+    school_ids = response.json()
+    if school_ids is None:
+        return []
+    if not isinstance(school_ids, dict):
+        raise RuntimeError("صيغة قائمة المدارس غير صالحة")
+
+    wanted = _normalize_school_login_name(school_input)
+    matches = []
+    for school_id in school_ids:
+        name_response = _fb_request("GET", f"schools/{school_id}/school_name")
+        active_response = _fb_request("GET", f"schools/{school_id}/active")
+        if (
+                name_response is None or not name_response.ok
+                or active_response is None or not active_response.ok):
+            raise RuntimeError("تعذر التحقق من بيانات إحدى المدارس")
+        school_name = name_response.json() or str(school_id)
+        active = active_response.json()
+        if wanted in {
+                _normalize_school_login_name(school_name),
+                _normalize_school_login_name(school_id),
+        }:
+            matches.append({
+                "id": str(school_id),
+                "name": str(school_name),
+                "active": active is None or bool(active),
+            })
+    return matches
+
+
+def cloud_authenticate(username, password, school_id=None):
+    """تحقق من بيانات المستخدم داخل المدرسة التي أدخلها عند تسجيل الدخول."""
+    if not school_id:
         return None, None
-    for sid, sdata in all_schools.items():
-        if not isinstance(sdata, dict):
-            continue
-        cloud_users = sdata.get("users_info", {})
-        if not isinstance(cloud_users, dict):
-            continue
-        user_info = cloud_users.get(username)
-        if isinstance(user_info, dict) and user_info.get("pwd_hash") == pwd_hash:
-            return sid, user_info.get("role", "teacher")
+    response = _fb_request("GET", f"schools/{school_id}/users_info")
+    if response is None or not response.ok:
+        raise RuntimeError("تعذر تحميل حسابات المدرسة")
+    cloud_users = response.json()
+    user_info = cloud_users.get(username) if isinstance(cloud_users, dict) else None
+    if not isinstance(user_info, dict):
+        return None, None
+    if str(user_info.get("school_id", school_id)) != str(school_id):
+        return None, None
+
+    password_matches = user_info.get("pwd_hash") == _sha256(password)
+    encoded_password = user_info.get("pwd_enc")
+    if not password_matches and isinstance(encoded_password, str):
+        try:
+            decoded_password = base64.b64decode(
+                encoded_password.encode("ascii"), validate=True
+            ).decode("utf-8")
+            password_matches = decoded_password == password
+        except (ValueError, UnicodeError, TypeError):
+            password_matches = False
+    role = str(user_info.get("role", "teacher"))
+    if password_matches and role in {"admin", "teacher"}:
+        return str(school_id), role
     return None, None
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
+    if session.get("username"):
+        return redirect(url_for("index"))
+
+    action = request.form.get("action", "") if request.method == "POST" else ""
+    if action == "select_school":
+        school_input = request.form.get("school", "").strip()
+        if not school_input:
+            flash("اكتب اسم المدرسة أو رمزها", "error")
+            return render_template("login.html", step="school", school_input="")
+        try:
+            matches = _find_login_school(school_input)
+        except (requests.RequestException, RuntimeError, ValueError) as error:
+            app.logger.error("تعذر التحقق من المدرسة عند تسجيل الدخول: %s", error)
+            flash("تعذر الاتصال ببيانات المدارس. حاول مرة أخرى بعد قليل.", "error")
+            return render_template(
+                "login.html", step="school", school_input=school_input)
+        if not matches:
+            flash("لم يتم العثور على مدرسة بهذا الاسم أو الرمز", "error")
+            return render_template(
+                "login.html", step="school", school_input=school_input)
+        if len(matches) > 1:
+            flash("اسم المدرسة غير فريد؛ اكتب رمز المدرسة بدل الاسم", "error")
+            return render_template(
+                "login.html", step="school", school_input=school_input)
+        school = matches[0]
+        if not school["active"]:
+            flash("هذه المدرسة موقوفة حالياً؛ راجع مسؤول النظام", "error")
+            return render_template(
+                "login.html", step="school", school_input=school_input)
+        session["login_school_id"] = school["id"]
+        session["login_school_name"] = school["name"]
+        session["login_next"] = (
+            request.form.get("next", "") or request.args.get("next", ""))
+        return redirect(url_for("login"))
+
+    if action == "change_school":
+        session.pop("login_school_id", None)
+        session.pop("login_school_name", None)
+        return redirect(url_for("login"))
+
+    if action == "authenticate":
+        school_id = str(session.get("login_school_id", "") or "")
+        school_name = str(session.get("login_school_name", "") or "")
+        if not school_id:
+            flash("أدخل اسم المدرسة أولاً", "error")
+            return redirect(url_for("login"))
+
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         if not username or not password:
-            flash("الرجاء إدخال اسم المستخدم وكلمة المرور", "error")
-            return render_template("login.html", username=username)
+            flash("اكتب اسم المستخدم وكلمة المرور", "error")
+            return render_template(
+                "login.html", step="credentials", school_name=school_name,
+                username=username)
 
-        # 1) حساب المطور (الاسم الجديد أو القديم)
-        pwd_hash = _sha256(password)
-        is_dev = (
-            (username == DEVELOPER_ID and pwd_hash == DEVELOPER_HASH)
-            or (username == DEVELOPER_ID_LEGACY and pwd_hash == DEVELOPER_HASH_LEGACY)
+        password_hash = _sha256(password)
+        is_developer = (
+            (username == DEVELOPER_ID and password_hash == DEVELOPER_HASH)
+            or (
+                username == DEVELOPER_ID_LEGACY
+                and password_hash == DEVELOPER_HASH_LEGACY
+            )
         )
-        if is_dev:
+        if is_developer:
             session.clear()
             session["username"] = username
             session["role"] = "admin"
             session["is_developer"] = True
-            flash(f"مرحباً أيها المطور 👋", "success")
-            return redirect(request.args.get("next") or url_for("schools_page"))
+            flash("مرحباً أيها المطور", "success")
+            return redirect(url_for("schools_page"))
 
-        # 2) حسابات السحابة (من schools/<id>/users_info)
-        school_id, role = cloud_authenticate(username, password)
-        if school_id:
-            # نقرأ صلاحيات الأستاذ (مستوى/كروبات معينة)
-            user_info = fb_get(f"schools/{school_id}/users_info/{username}") or {}
+        try:
+            active_response = _fb_request(
+                "GET", f"schools/{school_id}/active")
+            if active_response is None or not active_response.ok:
+                raise RuntimeError("تعذر التحقق من حالة المدرسة")
+            active = active_response.json()
+            if active is not None and not bool(active):
+                session.pop("login_school_id", None)
+                session.pop("login_school_name", None)
+                flash("هذه المدرسة موقوفة حالياً؛ راجع مسؤول النظام", "error")
+                return redirect(url_for("login"))
+            authenticated_school_id, role = cloud_authenticate(
+                username, password, school_id=school_id)
+            user_info = {}
+            if authenticated_school_id:
+                profile_response = _fb_request(
+                    "GET",
+                    f"schools/{authenticated_school_id}/users_info/{username}",
+                )
+                if profile_response is None or not profile_response.ok:
+                    raise RuntimeError("تعذر تحميل صلاحيات المستخدم")
+                user_info = profile_response.json()
+                if not isinstance(user_info, dict):
+                    raise RuntimeError("بيانات حساب المستخدم غير صالحة")
+        except (requests.RequestException, RuntimeError, ValueError) as error:
+            app.logger.error("تعذر التحقق من حساب المستخدم: %s", error)
+            flash("تعذر الاتصال بخادم الحسابات. حاول مرة أخرى بعد قليل.", "error")
+            return render_template(
+                "login.html", step="credentials", school_name=school_name,
+                username=username)
+
+        if authenticated_school_id:
+            next_path = session.get("login_next", "")
             session.clear()
             session["username"] = username
             session["role"] = role
             session["is_developer"] = False
-            session["school_id"] = school_id
+            session["school_id"] = authenticated_school_id
             session["assigned_level"] = str(user_info.get("assigned_level", "") or "")
-            ag = user_info.get("assigned_groups", [])
-            session["assigned_groups"] = list(ag) if isinstance(ag, list) else []
-            flash(f"مرحباً {username} 👋", "success")
-            return redirect(request.args.get("next") or url_for("index"))
+            assigned_groups = user_info.get("assigned_groups", [])
+            session["assigned_groups"] = (
+                list(assigned_groups) if isinstance(assigned_groups, list) else [])
+            flash(f"مرحباً {username} — {school_name}", "success")
+            if next_path.startswith("/") and not next_path.startswith("//"):
+                return redirect(next_path)
+            return redirect(url_for("index"))
 
-        # 3) حساب طوارئ افتراضي
-        if username == FALLBACK_USER and password == FALLBACK_PASSWORD:
-            session.clear()
-            session["username"] = username
-            session["role"] = "admin"
-            session["is_developer"] = False
-            flash("تم الدخول بالحساب الافتراضي — اختر المدرسة", "success")
-            return redirect(url_for("schools_page"))
+        flash("اسم المستخدم أو كلمة المرور غير صحيحة في هذه المدرسة", "error")
+        return render_template(
+            "login.html", step="credentials", school_name=school_name,
+            username=username)
 
-        flash("اسم المستخدم أو كلمة المرور غير صحيحة", "error")
-        return render_template("login.html", username=username)
-
-    if session.get("username"):
-        return redirect(url_for("index"))
-    return render_template("login.html", username="")
+    if session.get("login_school_id"):
+        return render_template(
+            "login.html", step="credentials",
+            school_name=session.get("login_school_name", ""), username="")
+    return render_template(
+        "login.html", step="school", school_input="",
+        next=request.args.get("next", ""))
 
 
 @app.route("/logout")
@@ -507,8 +822,12 @@ def index():
     level = request.args.get("level", "").strip()
     group = request.args.get("group", "").strip()
 
-    all_students = load_students(school_id)
-    all_students = _filter_by_scope(all_students)
+    base_students = load_students(school_id)
+    active_course = _course_state_or_abort(school_id, base_students)
+    all_students = (
+        active_course["students"] if active_course
+        else _filter_by_scope(base_students)
+    )
     students = all_students
 
     if q:
@@ -531,24 +850,418 @@ def index():
                            students=students, q=q, level=level, group=group,
                            levels=levels, groups=groups,
                            fields=STUDENT_FIELDS,
-                           total_count=len(all_students))
+                           total_count=len(all_students),
+                           active_course=active_course["course"] if active_course else None,
+                           pass_count=sum(1 for student in all_students if _calc_total(student) >= 60),
+                           fail_count=sum(1 for student in all_students if _calc_total(student) < 60))
 
 
 @app.route("/schools")
 @login_required
 def schools_page():
+    if not session.get("is_developer") and not session.get("is_demo"):
+        return redirect(url_for("index"))
+    if not session.get("is_developer"):
+        return redirect(url_for("index"))
     return render_template("schools.html", schools=list_schools())
 
 
 @app.route("/schools/select/<school_id>")
 @login_required
 def select_school(school_id):
-    if not session.get("is_developer"):
+    if not session.get("is_developer") and not session.get("is_demo"):
         flash("لا يمكنك تغيير المدرسة. مدرستك محددة من قبل الإدارة.", "error")
         return redirect(url_for("index"))
     session["school_id"] = school_id
     flash("تم اختيار المدرسة ✓", "success")
     return redirect(url_for("index"))
+
+
+@app.route("/courses", methods=["GET", "POST"])
+@login_required
+def courses_page():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+
+    if request.method == "POST":
+        if not _is_admin():
+            abort(403)
+
+        action = request.form.get("action", "")
+        try:
+            data = _load_course_data(school_id)
+        except RuntimeError as error:
+            abort(503, description=f"تعذر قراءة بيانات الدورات من Firebase: {error}")
+
+        if action == "add_course":
+            try:
+                year = int(request.form.get("gregorian_year", "") or datetime.now().year)
+            except ValueError:
+                flash("السنة الدراسية يجب أن تكون رقماً صحيحاً", "error")
+                return redirect(url_for("courses_page"))
+            if not 1800 <= year <= 2300:
+                flash("السنة الدراسية غير صالحة", "error")
+                return redirect(url_for("courses_page"))
+
+            matching = [
+                course for course in data["courses"].values()
+                if isinstance(course, dict) and int(course.get("gregorian_year", 0) or 0) == year
+            ]
+            sequence = max(
+                max((int(course.get("sequence", 0) or 0) for course in matching), default=0) + 1,
+                int(data["sequence_counters"].get(str(year), 1) or 1),
+            )
+            if sequence > 5:
+                flash("وصلت هذه السنة إلى الحد الأقصى وهو خمس دورات", "error")
+                return redirect(url_for("courses_page"))
+
+            now = datetime.now().isoformat()
+            course_id = uuid.uuid4().hex
+            course = {
+                "course_id": course_id,
+                "school_id": str(school_id),
+                "school_name": "",
+                "gregorian_year": year,
+                "persian_year": year - 621,
+                "sequence": sequence,
+                "teacher_usernames": [],
+                "archived": False,
+                "created_at": now,
+                "updated_at": now,
+            }
+            counters = dict(data["sequence_counters"])
+            counters[str(year)] = sequence + 1
+            if not _save_course_settings(
+                    school_id,
+                    data["academic_year"] or {
+                        "gregorian_year": year,
+                        "persian_year": year - 621,
+                    },
+                    counters):
+                flash("تعذر حفظ إعدادات الدورات على الخادم", "error")
+                return redirect(url_for("courses_page"))
+            if _save_course_record(school_id, "courses", course_id, course):
+                flash(f"تم إنشاء {_course_label(course)} ✓", "success")
+            else:
+                flash("تعذر إنشاء الدورة على الخادم؛ قد يبقى هناك رقم دورة غير مستخدم", "error")
+
+        elif action == "archive_course":
+            course_id = request.form.get("course_id", "")
+            course = data["courses"].get(course_id)
+            if not isinstance(course, dict):
+                flash("الدورة غير موجودة", "error")
+            else:
+                course["archived"] = True
+                course["updated_at"] = datetime.now().isoformat()
+                if _save_course_record(school_id, "courses", course_id, course):
+                    if session.get("active_course_id") == course_id:
+                        session.pop("active_course_id", None)
+                        session.pop("active_course_label", None)
+                    flash("تمت أرشفة الدورة؛ بياناتها وتسجيلاتها محفوظة", "success")
+                else:
+                    flash("تعذر أرشفة الدورة على الخادم", "error")
+
+        elif action == "assign_teachers":
+            course_id = request.form.get("course_id", "")
+            course = data["courses"].get(course_id)
+            teacher_names = list(dict.fromkeys(
+                name.strip() for name in request.form.getlist("teacher_usernames") if name.strip()
+            ))
+            try:
+                users = _firebase_json_required(f"schools/{school_id}/users_info") or {}
+            except RuntimeError as error:
+                abort(503, description=str(error))
+            valid_teachers = {
+                name for name, info in users.items()
+                if isinstance(info, dict) and info.get("role") == "teacher"
+            } if isinstance(users, dict) else set()
+            if not isinstance(course, dict) or course.get("archived"):
+                flash("اختر دورة نشطة", "error")
+            elif not set(teacher_names).issubset(valid_teachers):
+                flash("قائمة الأساتذة غير صالحة؛ حدّث الصفحة وحاول مجدداً", "error")
+            else:
+                conflicts = [
+                    teacher_name for teacher_name in teacher_names
+                    if _teacher_has_year_conflict(data, teacher_name, course_id)
+                ]
+                if conflicts:
+                    flash("لا يمكن ربط الأستاذ بأكثر من سنة دراسية: " + "، ".join(conflicts), "error")
+                else:
+                    course["teacher_usernames"] = teacher_names
+                    course["updated_at"] = datetime.now().isoformat()
+                    if _save_course_record(school_id, "courses", course_id, course):
+                        flash("تم تحديث قائمة أساتذة الدورة ✓", "success")
+                    else:
+                        flash("تعذر حفظ أساتذة الدورة على الخادم", "error")
+
+        elif action == "enroll_student":
+            course_id = request.form.get("course_id", "")
+            course = data["courses"].get(course_id)
+            student_id = request.form.get("student_id", "")
+            student = get_student(school_id, student_id) if student_id else None
+            teacher = request.form.get("teacher", "").strip()
+            try:
+                users = _firebase_json_required(f"schools/{school_id}/users_info") or {}
+            except RuntimeError as error:
+                abort(503, description=str(error))
+            teacher_info = users.get(teacher) if isinstance(users, dict) else None
+            code = str(student.get("الكود", "")).strip() if student else ""
+            level = request.form.get("level", "").strip() or (
+                str(student.get("المستوى", "")).strip() if student else "")
+            group = request.form.get("group", "").strip() or (
+                str(student.get("الكروب", "")).strip() if student else "")
+            problem = ""
+            if not isinstance(course, dict) or course.get("archived"):
+                problem = "اختر دورة نشطة"
+            elif not student or not code:
+                problem = "الطالب أو كوده غير موجود"
+            elif not _can_access_student(student):
+                problem = "لا تملك صلاحية الوصول إلى هذا الطالب"
+            elif teacher and (
+                    not isinstance(teacher_info, dict) or teacher_info.get("role") != "teacher"):
+                problem = "حساب الأستاذ المحدد غير صالح"
+            elif any(
+                isinstance(item, dict)
+                and str(item.get("course_id", "")) == course_id
+                and str(item.get("student_code", "")).strip() == code
+                for item in data["enrollments"].values()
+            ):
+                problem = "الطالب مسجل مسبقاً في هذه الدورة"
+            elif any(
+                isinstance(item, dict)
+                and str(item.get("course_id", "")) != course_id
+                and str(item.get("student_code", "")).strip() == code
+                and (
+                    _course_level_key(level) in {"اول", "ثاني", "ثالث"}
+                    or _course_level_key(item.get("level", "")) in {"اول", "ثاني", "ثالث"}
+                )
+                for item in data["enrollments"].values()
+            ):
+                problem = "لا يمكن تكرار تسجيل هذا الطالب بين الدورات للمستويات الأول والثاني والثالث"
+            elif teacher and _teacher_has_year_conflict(data, teacher, course_id):
+                problem = "يجب استخدام حساب مختلف للأستاذ في كل سنة دراسية"
+            if problem:
+                flash(problem, "error")
+            else:
+                now = datetime.now().isoformat()
+                enrollment_id = uuid.uuid4().hex
+                enrollment = {
+                    "enrollment_id": enrollment_id,
+                    "school_id": str(school_id),
+                    "course_id": course_id,
+                    "student_code": code,
+                    "student_name": str(student.get("الاسم", "")),
+                    "level": level,
+                    "group": group,
+                    "teacher": teacher,
+                    "grades": {},
+                    "attendance": [],
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                if _save_course_record(school_id, "enrollments", enrollment_id, enrollment):
+                    flash(f"تم تسجيل الطالب {enrollment['student_name']} في الدورة ✓", "success")
+                else:
+                    flash("تعذر حفظ تسجيل الطالب على الخادم", "error")
+
+        elif action == "edit_enrollment":
+            course_id = request.form.get("course_id", "")
+            enrollment_id = request.form.get("enrollment_id", "")
+            course = data["courses"].get(course_id)
+            enrollment = data["enrollments"].get(enrollment_id)
+            level = request.form.get("level", "").strip()
+            group = request.form.get("group", "").strip()
+            teacher = request.form.get("teacher", "").strip()
+            try:
+                users = _firebase_json_required(f"schools/{school_id}/users_info") or {}
+            except RuntimeError as error:
+                abort(503, description=str(error))
+            teacher_info = users.get(teacher) if isinstance(users, dict) else None
+            problem = ""
+            if not isinstance(course, dict) or course.get("archived"):
+                problem = "اختر دورة نشطة"
+            elif (
+                    not isinstance(enrollment, dict)
+                    or str(enrollment.get("course_id", "")) != course_id):
+                problem = "التسجيل غير موجود في الدورة المحددة"
+            elif teacher and (
+                    not isinstance(teacher_info, dict) or teacher_info.get("role") != "teacher"):
+                problem = "حساب الأستاذ المحدد غير صالح"
+            elif any(
+                isinstance(item, dict)
+                and str(item.get("course_id", "")) != course_id
+                and str(item.get("student_code", "")).strip()
+                == str(enrollment.get("student_code", "")).strip()
+                and (
+                    _course_level_key(level) in {"اول", "ثاني", "ثالث"}
+                    or _course_level_key(item.get("level", "")) in {"اول", "ثاني", "ثالث"}
+                )
+                for item in data["enrollments"].values()
+            ):
+                problem = "لا يمكن تكرار تسجيل هذا الطالب بين الدورات للمستويات الأول والثاني والثالث"
+            elif teacher and _teacher_has_year_conflict(data, teacher, course_id):
+                problem = "يجب استخدام حساب مختلف للأستاذ في كل سنة دراسية"
+            if problem:
+                flash(problem, "error")
+            else:
+                enrollment["level"] = level
+                enrollment["group"] = group
+                enrollment["teacher"] = teacher
+                enrollment["updated_at"] = datetime.now().isoformat()
+                if _save_course_record(school_id, "enrollments", enrollment_id, enrollment):
+                    flash("تم تحديث تسجيل الطالب ✓", "success")
+                else:
+                    flash("تعذر تحديث التسجيل على الخادم", "error")
+
+        elif action == "delete_enrollment":
+            enrollment_id = request.form.get("enrollment_id", "")
+            enrollment = data["enrollments"].get(enrollment_id)
+            if not isinstance(enrollment, dict) or str(enrollment.get("course_id", "")) not in data["courses"]:
+                flash("التسجيل غير موجود", "error")
+            elif fb_delete(f"schools/{school_id}/enrollments/{enrollment_id}"):
+                flash("تم حذف تسجيل الطالب من الدورة", "success")
+            else:
+                flash("تعذر حذف التسجيل على الخادم", "error")
+        else:
+            abort(400)
+
+        return redirect(url_for("courses_page", course=request.form.get("course_id", "")))
+
+    try:
+        course_data = _load_course_data(school_id)
+    except RuntimeError as error:
+        abort(503, description=f"تعذر قراءة بيانات الدورات من Firebase: {error}")
+
+    records = [
+        (course_id, course)
+        for course_id, course in course_data["courses"].items()
+        if isinstance(course, dict) and _can_access_course(course, course_data)
+    ]
+    records.sort(key=lambda item: (
+        int(item[1].get("gregorian_year", 0) or 0),
+        int(item[1].get("sequence", 0) or 0),
+    ), reverse=True)
+    selected_id = request.args.get("course", "")
+    selected_course = course_data["courses"].get(selected_id) if selected_id else None
+    if selected_id and (
+            not isinstance(selected_course, dict)
+            or not _can_access_course(selected_course, course_data)):
+        abort(403)
+    enrollments = [
+        (enrollment_id, enrollment)
+        for enrollment_id, enrollment in course_data["enrollments"].items()
+        if isinstance(enrollment, dict)
+        and str(enrollment.get("course_id", "")) == selected_id
+        and (
+            _is_admin()
+            or (
+                str(enrollment.get("teacher", "")).strip().casefold()
+                == str(session.get("username", "")).strip().casefold()
+            )
+            or (
+                not str(enrollment.get("teacher", "")).strip()
+                and str(session.get("username", "")).strip().casefold()
+                in {
+                    str(name).strip().casefold()
+                    for name in (selected_course.get("teacher_usernames") or [])
+                }
+            )
+        )
+    ]
+    students = load_students(school_id) if _is_admin() else _filter_by_scope(load_students(school_id))
+    try:
+        users = _firebase_json_required(f"schools/{school_id}/users_info") or {}
+    except RuntimeError as error:
+        abort(503, description=str(error))
+    teachers = sorted(
+        name for name, info in users.items()
+        if isinstance(info, dict) and info.get("role") == "teacher"
+    ) if isinstance(users, dict) else []
+    return render_template(
+        "courses.html",
+        courses=records,
+        selected_id=selected_id,
+        selected_course=selected_course,
+        enrollments=enrollments,
+        students=students,
+        teachers=teachers,
+        academic_year=course_data["academic_year"],
+        current_year=datetime.now().year,
+    )
+
+
+@app.route("/courses/select/<course_id>", methods=["POST"])
+@login_required
+def select_course(course_id):
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+    try:
+        data = _load_course_data(school_id)
+    except RuntimeError as error:
+        abort(503, description=f"تعذر قراءة بيانات الدورات من Firebase: {error}")
+    course = data["courses"].get(course_id)
+    if not isinstance(course, dict) or course.get("archived"):
+        flash("الدورة غير موجودة أو مؤرشفة", "error")
+        return redirect(url_for("courses_page"))
+    if not _can_access_course(course, data):
+        abort(403)
+    session["active_course_id"] = course_id
+    session["active_course_label"] = _course_label(course)
+    flash(f"تم اختيار {session['active_course_label']} ✓", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/courses/clear", methods=["POST"])
+@login_required
+def clear_active_course():
+    session.pop("active_course_id", None)
+    session.pop("active_course_label", None)
+    flash("تم الرجوع إلى السجل العام للطلاب", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/backup")
+@login_required
+@admin_required
+def download_backup():
+    school_id = current_school_id()
+    if not school_id:
+        return redirect(url_for("schools_page"))
+    try:
+        course_data = _load_course_data(school_id)
+    except RuntimeError as error:
+        abort(503, description=f"تعذر قراءة بيانات الدورات من Firebase: {error}")
+    try:
+        school_info = _firebase_json_required(f"schools/{school_id}") or {}
+        students_snapshot = _firebase_json_required(students_path(school_id)) or {}
+    except RuntimeError as error:
+        abort(503, description=f"تعذر إنشاء النسخة الاحتياطية: {error}")
+    snapshot = {
+        "format": "azfa-web-backup-v1",
+        "exported_at": datetime.now().isoformat(),
+        "school_id": school_id,
+        "school_name": school_info.get("school_name", school_id)
+            if isinstance(school_info, dict) else school_id,
+        "students": students_snapshot,
+        "courses": course_data["courses"],
+        "enrollments": course_data["enrollments"],
+        "course_settings": {
+            "academic_year": course_data["academic_year"],
+            "sequence_counters": course_data["sequence_counters"],
+        },
+    }
+    import json
+    from io import BytesIO
+    buffer = BytesIO(json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8"))
+    filename = f"azfa-backup-{school_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/json; charset=utf-8",
+    )
 
 
 @app.route("/student/new", methods=["GET", "POST"])
@@ -690,8 +1403,12 @@ def attendance_page():
     if not school_id:
         return redirect(url_for("schools_page"))
 
-    all_students = load_students(school_id)
-    all_students = _filter_by_scope(all_students)
+    base_students = load_students(school_id)
+    active_course = _course_state_or_abort(school_id, base_students)
+    all_students = (
+        active_course["students"] if active_course
+        else _filter_by_scope(base_students)
+    )
     levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
 
@@ -721,18 +1438,28 @@ def attendance_page():
     if request.method == "POST":
         action = request.form.get("action", "")  # present | absent
         student_ids = request.form.getlist("students")
-        if not student_ids:
+        if action not in ("present", "absent"):
+            flash("حالة الحضور غير صالحة", "error")
+        elif not student_ids:
             flash("لم تحدد أي طالب", "error")
         else:
-            success = 0
+            success = failed = 0
             already = 0
             for sid in student_ids:
-                stu = get_student(school_id, sid)
-                if not stu:
-                    continue
-                if not _can_access_student(stu):
-                    continue
-                log = stu.get("سجل_الحضور", [])
+                if active_course:
+                    enrollment = active_course["data"]["enrollments"].get(sid)
+                    stu = next(
+                        (item for item in all_students if item.get("_enrollment_id") == sid),
+                        None,
+                    )
+                    if not isinstance(enrollment, dict) or not stu or not _can_access_student(stu):
+                        continue
+                    log = enrollment.get("attendance", [])
+                else:
+                    stu = get_student(school_id, sid)
+                    if not stu or not _can_access_student(stu):
+                        continue
+                    log = stu.get("سجل_الحضور", [])
                 if not isinstance(log, list):
                     log = []
                 # تحقق إذا تم تسجيله اليوم
@@ -743,25 +1470,58 @@ def attendance_page():
                 if already_today:
                     already += 1
                     continue
-                log.append({
+                attendance = {
                     "التاريخ": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "الحالة": "حاضر" if action == "present" else "غائب",
-                })
-                stu["سجل_الحضور"] = log
-                if action == "absent":
-                    stu["غياب"] = int(stu.get("غياب", 0) or 0) + 1
-                stu["درجة الحضور"] = _attendance_score(stu.get("غياب", 0))
-                stu.pop("id", None)
-                save_student(school_id, sid, stu)
-                success += 1
+                    "بواسطة": session.get("username", ""),
+                }
+                if active_course:
+                    attendance["course_id"] = active_course["id"]
+                    attendance["enrollment_id"] = sid
+                    log.append(attendance)
+                    enrollment["attendance"] = log
+                    absent_days = {
+                        str(record.get("التاريخ", ""))[:10]
+                        for record in log
+                        if isinstance(record, dict)
+                        and str(record.get("الحالة", "")).strip().casefold()
+                        in ("غائب", "غایب", "absent")
+                    }
+                    grades = enrollment.get("grades")
+                    if not isinstance(grades, dict):
+                        grades = {}
+                        enrollment["grades"] = grades
+                    grades["غياب"] = len(absent_days)
+                    grades["درجة الحضور"] = max(0, 20 - (len(absent_days) // 2))
+                    enrollment["updated_at"] = datetime.now().isoformat()
+                    saved = _save_course_record(
+                        school_id, "enrollments", sid, enrollment)
+                else:
+                    log.append(attendance)
+                    stu["سجل_الحضور"] = log
+                    if action == "absent":
+                        stu["غياب"] = int(stu.get("غياب", 0) or 0) + 1
+                    stu["درجة الحضور"] = _attendance_score(stu.get("غياب", 0))
+                    stu.pop("id", None)
+                    saved = save_student(school_id, sid, stu)
+                if saved:
+                    success += 1
+                else:
+                    failed += 1
             if success:
                 flash(f"تم تسجيل {success} طالب ✓" + (f" (تم تجاهل {already} مسجلين مسبقاً)" if already else ""), "success")
             elif already:
                 flash(f"كل الطلاب المحددين مسجلين اليوم بالفعل", "error")
+            if failed:
+                flash(f"تعذر حفظ الحضور لـ {failed} طالب على الخادم", "error")
 
         # تحديث القائمة بعد التسجيل
-        all_students = load_students(school_id)
-        all_students = _filter_by_scope(all_students)
+        base_students = load_students(school_id)
+        active_course = _course_state_or_abort(school_id, base_students)
+        all_students = (
+            active_course["students"] if active_course
+            else _filter_by_scope(base_students)
+        )
         filtered = all_students
         if sel_level:
             filtered = [s for s in filtered if str(s.get("المستوى", "")) == sel_level]
@@ -786,7 +1546,8 @@ def attendance_page():
                            levels=levels, groups=groups,
                            groups_by_level=groups_by_level,
                            sel_level=sel_level, sel_groups=sel_groups,
-                           today=today)
+                           today=today,
+                           active_course=active_course["course"] if active_course else None)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -801,20 +1562,33 @@ def grades_page():
 
     sid_q = request.args.get("sid", "").strip()
     code_q = request.args.get("code", "").strip()
+    base_students = load_students(school_id)
+    active_course = _course_state_or_abort(school_id, base_students)
+    visible_students = (
+        active_course["students"] if active_course
+        else _filter_by_scope(base_students)
+    )
     selected = None
+    selected_enrollment = None
 
     # البحث بالكود
     if code_q and not sid_q:
-        for s in load_students(school_id):
+        for s in visible_students:
             if str(s.get("الكود", "")) == code_q:
                 selected = s
                 sid_q = s.get("id")
+                if active_course:
+                    selected_enrollment = active_course["data"]["enrollments"].get(
+                        s.get("_enrollment_id"))
                 break
         if not selected:
             flash(f"لا يوجد طالب بالكود {code_q}", "error")
 
     if sid_q and not selected:
-        selected = get_student(school_id, sid_q)
+        selected = next((s for s in visible_students if str(s.get("id", "")) == sid_q), None)
+        if selected and active_course:
+            selected_enrollment = active_course["data"]["enrollments"].get(
+                selected.get("_enrollment_id"))
 
     if request.method == "POST" and selected:
         # الأستاذ يدخل النشاط فقط — المدير/المطور يدخل كل الدرجات
@@ -841,16 +1615,42 @@ def grades_page():
             selected["النشاط"] = nashat
             selected["الشفهي"] = shafahi
             selected["التحريري"] = tahriri
-            selected["درجة الحضور"] = _attendance_score(selected.get("غياب", 0))
-            sid_actual = selected.pop("id", sid_q)
-            if save_student(school_id, sid_actual, selected):
+            selected["درجة الحضور"] = (
+                max(0, 20 - (int(float(selected.get("غياب", 0) or 0)) // 2))
+                if active_course else _attendance_score(selected.get("غياب", 0))
+            )
+            if active_course and not isinstance(selected_enrollment, dict):
+                flash("تعذر العثور على تسجيل الطالب ضمن الدورة المحددة", "error")
+                saved = False
+                sid_actual = selected.get("id", sid_q)
+            elif active_course:
+                grades = selected_enrollment.get("grades")
+                if not isinstance(grades, dict):
+                    grades = {}
+                    selected_enrollment["grades"] = grades
+                for field in ("غياب", "درجة الحضور", "النشاط", "الشفهي", "التحريري"):
+                    grades[field] = selected.get(field, 0)
+                selected_enrollment["updated_at"] = datetime.now().isoformat()
+                saved = _save_course_record(
+                    school_id, "enrollments",
+                    selected_enrollment["enrollment_id"], selected_enrollment)
+                sid_actual = selected.get("id", sid_q)
+            else:
+                sid_actual = selected.pop("id", sid_q)
+                saved = save_student(school_id, sid_actual, selected)
+            if saved:
                 flash(f"تم حفظ درجات {selected.get('الاسم', '')} ✓", "success")
                 return redirect(url_for("grades_page", sid=sid_actual))
             flash("فشل الحفظ", "error")
 
     if selected:
         selected["_total"] = _calc_total(selected)
-    return render_template("grades.html", student=selected, code_q=code_q)
+    return render_template(
+        "grades.html",
+        student=selected,
+        code_q=code_q,
+        active_course=active_course["course"] if active_course else None,
+    )
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -867,8 +1667,7 @@ def reports_page():
     level = request.args.get("level", "").strip()
     group = request.args.get("group", "").strip()
 
-    all_students = load_students(school_id)
-    all_students = _filter_by_scope(all_students)
+    all_students, active_course = _visible_students(school_id)
     students = list(all_students)
     if q:
         ql = q.lower()
@@ -892,7 +1691,8 @@ def reports_page():
 
     return render_template("reports.html",
                            students=students, q=q, level=level, group=group,
-                           levels=levels, groups=groups)
+                           levels=levels, groups=groups,
+                           active_course=active_course["course"] if active_course else None)
 
 
 @app.route("/reports/export")
@@ -916,8 +1716,7 @@ def reports_export():
     level = request.args.get("level", "").strip()
     group = request.args.get("group", "").strip()
 
-    students = load_students(school_id)
-    students = _filter_by_scope(students)
+    students, active_course = _visible_students(school_id)
     if q:
         ql = q.lower()
         students = [s for s in students if ql in str(s.get("الاسم", "")).lower()]
@@ -970,7 +1769,8 @@ def reports_export():
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
-    filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    report_type = "course-report" if active_course else "report"
+    filename = f"{report_type}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return send_file(buf, as_attachment=True, download_name=filename,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
@@ -981,7 +1781,11 @@ def student_report(sid):
     school_id = current_school_id()
     if not school_id:
         return redirect(url_for("schools_page"))
-    student = get_student(school_id, sid)
+    visible_students, active_course = _visible_students(school_id)
+    student = next(
+        (item for item in visible_students if str(item.get("id", "")) == str(sid)),
+        None,
+    ) if active_course else get_student(school_id, sid)
     if not student:
         flash("الطالب غير موجود", "error")
         return redirect(url_for("reports_page"))
@@ -998,7 +1802,8 @@ def student_report(sid):
     absent_days = sum(1 for e in log if isinstance(e, dict) and e.get("الحالة") == "غائب")
     return render_template("student_report.html", student=student,
                            log=list(reversed(log)),
-                           present_days=present_days, absent_days=absent_days)
+                           present_days=present_days, absent_days=absent_days,
+                           active_course=active_course["course"] if active_course else None)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1015,7 +1820,7 @@ def final_grades():
     level = request.args.get("level", "").strip()
     group = request.args.get("group", "").strip()
 
-    all_students = _filter_by_scope(load_students(school_id))
+    all_students, active_course = _visible_students(school_id)
     students = list(all_students)
     if level:
         students = [s for s in students if str(s.get("المستوى", "")) == level]
@@ -1037,7 +1842,8 @@ def final_grades():
                            students=students, level=level, group=group,
                            levels=levels, groups=groups,
                            pass_count=pass_count, fail_count=fail_count,
-                           today=datetime.now().strftime("%Y-%m-%d"))
+                           today=datetime.now().strftime("%Y-%m-%d"),
+                           active_course=active_course["course"] if active_course else None)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1051,7 +1857,7 @@ def statistics_report():
     if not school_id:
         return redirect(url_for("schools_page"))
 
-    students_all = _filter_by_scope(load_students(school_id))
+    students_all, active_course = _visible_students(school_id)
     total = len(students_all)
     pass_count = 0
     fail_count = 0
@@ -1097,7 +1903,8 @@ def statistics_report():
                            avg=round(avg, 2), pass_rate=round(pass_rate, 1),
                            total_absences=total_absences,
                            by_level=sorted(by_level.items()),
-                           by_group=sorted(by_group.items()))
+                           by_group=sorted(by_group.items()),
+                           active_course=active_course["course"] if active_course else None)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1109,7 +1916,7 @@ def absence_report():
     school_id = current_school_id()
     if not school_id:
         return redirect(url_for("schools_page"))
-    students = _filter_by_scope(load_students(school_id))
+    students, active_course = _visible_students(school_id)
     rows = []
     for s in students:
         try:
@@ -1120,7 +1927,11 @@ def absence_report():
             s["_absences"] = a
             rows.append(s)
     rows.sort(key=lambda s: s["_absences"], reverse=True)
-    return render_template("absence_report.html", students=rows)
+    return render_template(
+        "absence_report.html",
+        students=rows,
+        active_course=active_course["course"] if active_course else None,
+    )
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1133,10 +1944,16 @@ def exam_halls():
     if not school_id:
         return redirect(url_for("schools_page"))
 
-    all_students = load_students(school_id)
-    all_students = _filter_by_scope(all_students)
+    all_students, active_course = _visible_students(school_id)
     levels = sorted({str(s.get("المستوى", "")) for s in all_students if s.get("المستوى")})
     groups = sorted({str(s.get("الكروب", "")) for s in all_students if s.get("الكروب")})
+    groups_by_level = {}
+    for student in all_students:
+        level_name = str(student.get("المستوى", "")).strip()
+        group_name = str(student.get("الكروب", "")).strip()
+        if level_name and group_name:
+            groups_by_level.setdefault(level_name, set()).add(group_name)
+    groups_by_level = {key: sorted(value) for key, value in groups_by_level.items()}
 
     sel_levels = request.values.getlist("levels")
     sel_groups = request.values.getlist("groups")
@@ -1166,7 +1983,8 @@ def exam_halls():
                            groups_by_level=groups_by_level,
                            sel_levels=sel_levels, sel_groups=sel_groups,
                            pages=pages,
-                           total=sum(len(p) for p in pages))
+                           total=sum(len(p) for p in pages),
+                           active_course=active_course["course"] if active_course else None)
 
 
 # ════════════════════════════════════════════════════════════════════

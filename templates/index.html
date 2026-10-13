@@ -2,6 +2,24 @@
 {% block title %}قائمة الطلاب{% endblock %}
 {% block content %}
 
+<section class="dashboard-intro">
+  <div>
+    <span class="eyebrow">لوحة المتابعة</span>
+    <h1>مرحبًا، {{ current_user }}</h1>
+    <p>{% if active_course %}أنت تعرض بيانات {{ 'الدورة الدراسية %s-%02d'|format(active_course.get('gregorian_year', ''), active_course.get('sequence', 0)|int) }}.{% else %}إدارة الطلاب والحضور والدرجات من مكان واحد.{% endif %}</p>
+  </div>
+  <div class="dashboard-actions">
+    {% if can_modify_students %}<a href="{{ url_for('new_student') }}" class="btn-light">＋ إضافة طالب</a>{% endif %}
+    <a href="{{ url_for('courses_page') }}" class="btn-light btn-light-outline">🗂️ الدورات</a>
+  </div>
+</section>
+
+<section class="stats-grid" aria-label="ملخص الطلاب">
+  <div class="stat-tile"><span class="stat-tile-icon">👥</span><span class="stat-tile-label">إجمالي الطلاب</span><strong>{{ total_count }}</strong><small>{% if active_course %}في الدورة المختارة{% else %}ضمن صلاحيات حسابك{% endif %}</small></div>
+  <div class="stat-tile stat-tile-success"><span class="stat-tile-icon">🎓</span><span class="stat-tile-label">ناجحون</span><strong>{{ pass_count }}</strong><small>مجموع 60 فأعلى</small></div>
+  <div class="stat-tile stat-tile-danger"><span class="stat-tile-icon">📈</span><span class="stat-tile-label">بحاجة للمتابعة</span><strong>{{ fail_count }}</strong><small>مجموع أقل من 60</small></div>
+</section>
+
 <form method="get" class="filters card">
   <input type="search" name="q" value="{{ q }}" placeholder="🔍 ابحث بالاسم أو الكود...">
   <select name="level">
@@ -16,7 +34,7 @@
   {% if q or level or group %}<a href="{{ url_for('index') }}" class="btn-link">مسح</a>{% endif %}
 </form>
 
-<p class="muted">عدد النتائج: <strong>{{ students|length }}</strong></p>
+<div class="results-heading"><p class="muted">الطلاب المعروضون</p><strong>{{ students|length }} <small>طالب</small></strong></div>
 
 {% if students %}
 <div class="table-wrap card">

@@ -81,13 +81,13 @@
       <form method="post" class="inline-form">
         <input type="hidden" name="level" value="{{ sel_level }}">
         {% for g in sel_groups %}<input type="hidden" name="groups" value="{{ g }}">{% endfor %}
-        <input type="hidden" name="students" value="{{ s.id }}">
+        <input type="hidden" name="students" value="{{ s.get('_enrollment_id', s.id) }}">
         <button type="submit" name="action" value="present" class="btn-success btn-att">✅ {{ t('present') }}</button>
       </form>
       <form method="post" class="inline-form">
         <input type="hidden" name="level" value="{{ sel_level }}">
         {% for g in sel_groups %}<input type="hidden" name="groups" value="{{ g }}">{% endfor %}
-        <input type="hidden" name="students" value="{{ s.id }}">
+        <input type="hidden" name="students" value="{{ s.get('_enrollment_id', s.id) }}">
         <button type="submit" name="action" value="absent" class="btn-danger btn-att">❌ {{ t('absent') }}</button>
       </form>
     </div>
