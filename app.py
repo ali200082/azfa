@@ -1460,9 +1460,9 @@ def health():
 # 🟢 تسجيل الحضور والغياب
 # ════════════════════════════════════════════════════════════════════
 def _attendance_score(absences):
-    """نفس صيغة البرنامج: 20 - (الغياب / 2)، بحد أدنى 0"""
+    """Mirror the desktop rule: subtract one point per two absences."""
     try:
-        return max(0, 20 - (float(absences or 0) / 2))
+        return max(0, 20 - (int(float(absences or 0)) // 2))
     except (TypeError, ValueError):
         return 20
 

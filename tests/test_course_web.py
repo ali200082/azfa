@@ -85,6 +85,20 @@ class CourseWebTests(unittest.TestCase):
         with self.client.session_transaction() as current_session:
             current_session.clear()
 
+    def test_attendance_score_matches_desktop_absence_deduction_rule(self):
+        expected_scores = {
+            0: 20,
+            1: 20,
+            2: 19,
+            3: 19,
+            4: 18,
+            40: 0,
+            42: 0,
+        }
+        for absences, expected in expected_scores.items():
+            with self.subTest(absences=absences):
+                self.assertEqual(web._attendance_score(absences), expected)
+
     def test_login_selects_school_first_and_uses_admin_role_without_school_picker(self):
         school = self.firebase.data["schools"]["S1"]
         school["users_info"]["admin1"]["pwd_hash"] = web._sha256("secret")
