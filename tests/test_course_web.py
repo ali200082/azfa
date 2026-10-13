@@ -187,15 +187,22 @@ class CourseWebTests(unittest.TestCase):
             self.assertNotIn("login_school_id", current_session)
 
     def test_developer_username_in_school_step_opens_global_developer_login(self):
+        developer_id = "AHMEDWAZIR"
+        self.firebase.data["global"] = {
+            "dev_config": {
+                "dev_id": developer_id,
+                "dev_auth": web._sha256("developer-secret"),
+            }
+        }
         self._start_logged_out()
 
-        with patch.object(
-            web, "_fb_request", side_effect=AssertionError("Firebase must not be queried")
-        ):
+        with patch.object(web, "_fb_request", side_effect=self.firebase.request) as fb_request:
             response = self.client.post(
                 "/login",
-                data={"action": "select_school", "school": web.DEVELOPER_ID},
+                data={"action": "select_school", "school": developer_id},
             )
+        self.assertEqual(fb_request.call_count, 1)
+        self.assertEqual(fb_request.call_args.args, ("GET", "global/dev_config"))
         self.assertEqual(response.status_code, 302)
         with self.client.session_transaction() as current_session:
             self.assertTrue(current_session["login_developer_mode"])
@@ -205,17 +212,16 @@ class CourseWebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("الوصول إلى جميع المدارس".encode(), response.data)
         self.assertIn(
-            f'value="{web.DEVELOPER_ID}"'.encode(), response.data)
+            f'value="{developer_id}"'.encode(), response.data)
 
-        with patch.object(web, "DEVELOPER_HASH", web._sha256("developer-secret")):
-            response = self.client.post(
-                "/login",
-                data={
-                    "action": "authenticate",
-                    "username": web.DEVELOPER_ID,
-                    "password": "developer-secret",
-                },
-            )
+        response = self.client.post(
+            "/login",
+            data={
+                "action": "authenticate",
+                "username": developer_id,
+                "password": "developer-secret",
+            },
+        )
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/schools")
@@ -228,17 +234,24 @@ class CourseWebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_developer_mode_rejects_invalid_developer_credentials(self):
+        developer_id = "AZFA_DEV"
+        self.firebase.data["global"] = {
+            "dev_config": {
+                "dev_id": developer_id,
+                "dev_auth": web._sha256("correct-password"),
+            }
+        }
         self._start_logged_out()
         self.client.post(
             "/login",
-            data={"action": "select_school", "school": web.DEVELOPER_ID_LEGACY},
+            data={"action": "select_school", "school": developer_id},
         )
 
         response = self.client.post(
             "/login",
             data={
                 "action": "authenticate",
-                "username": web.DEVELOPER_ID_LEGACY,
+                "username": developer_id,
                 "password": "wrong-password",
             },
         )
@@ -247,6 +260,41 @@ class CourseWebTests(unittest.TestCase):
         self.assertIn("بيانات حساب المطور غير صحيحة".encode(), response.data)
         with self.client.session_transaction() as current_session:
             self.assertNotIn("username", current_session)
+
+    def test_developer_login_does_not_accept_removed_hardcoded_credentials(self):
+        self.assertEqual(web._get_developer_credentials(), [])
+
+    def test_developer_login_uses_latest_credentials_from_shared_cloud_config(self):
+        self.firebase.data["global"] = {
+            "dev_config": {
+                "dev_id": "CURRENT_DEVELOPER",
+                "dev_auth": web._sha256("latest-developer-password"),
+            }
+        }
+        self._start_logged_out()
+
+        response = self.client.post(
+            "/login",
+            data={"action": "select_school", "school": "CURRENT_DEVELOPER"},
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as current_session:
+            self.assertTrue(current_session["login_developer_mode"])
+
+        response = self.client.post(
+            "/login",
+            data={
+                "action": "authenticate",
+                "username": "CURRENT_DEVELOPER",
+                "password": "latest-developer-password",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/schools")
+        with self.client.session_transaction() as current_session:
+            self.assertEqual(current_session["username"], "CURRENT_DEVELOPER")
+            self.assertTrue(current_session["is_developer"])
 
     def test_course_creation_enrollment_attendance_and_grades_use_shared_paths(self):
         response = self.client.post(

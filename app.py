@@ -13,6 +13,7 @@ import requests
 import uuid
 import os
 import hashlib
+import hmac
 import base64
 from functools import wraps
 from datetime import datetime
@@ -22,13 +23,6 @@ FIREBASE_URL = "https://azfa-3ff21-default-rtdb.firebaseio.com"
 FIREBASE_URL_FALLBACK = "https://falling-haze-c742.ahmed-wazir-hlail.workers.dev"
 HTTP_TIMEOUT = 15
 
-# ────────────── إعدادات المصادقة (نفس البرنامج الأصلي) ──────────────
-# حساب المطور (مطابق لما في برنامج الحاسبة)
-DEVELOPER_ID = "AHMEDWAZIR"
-DEVELOPER_HASH = "0acb8d25fb2311d736c7ee4142ef94fc3ea3231557833dd6c664ab30699a8ed8"  # 1996124
-# اسم احتياطي قديم (يقبل أيضاً)
-DEVELOPER_ID_LEGACY = bytes([65, 90, 70, 65, 95, 68, 69, 86]).decode()  # AZFA_DEV
-DEVELOPER_HASH_LEGACY = "69b088fc284dd65a60dd2edf0e355e6452913608f8a46b572fcf3f43decd65fb"
 # ────────────── الترجمة (العربية / الفارسية) ──────────────
 TRANSLATIONS = {
     "ar": {
@@ -605,12 +599,33 @@ def _normalize_school_login_name(value):
     return " ".join(str(value or "").split()).casefold()
 
 
-def _is_developer_username(value):
-    username = str(value or "").strip().casefold()
-    return username in {
-        DEVELOPER_ID.casefold(),
-        DEVELOPER_ID_LEGACY.casefold(),
-    }
+def _get_developer_credentials():
+    response = _fb_request("GET", "global/dev_config")
+    if response is None or not response.ok:
+        raise RuntimeError("تعذر تحميل بيانات المطور")
+
+    config = response.json()
+    if config is None:
+        return []
+    if not isinstance(config, dict):
+        raise RuntimeError("صيغة بيانات المطور غير صالحة")
+
+    username = config.get("dev_id")
+    password_hash = config.get("dev_auth")
+    if (
+        not isinstance(username, str)
+        or not username.strip()
+        or not isinstance(password_hash, str)
+        or len(password_hash) != 64
+        or any(char not in "0123456789abcdefABCDEF" for char in password_hash)
+    ):
+        raise RuntimeError("بيانات اعتماد المطور المحفوظة غير صالحة")
+    return [(username.strip(), password_hash.lower())]
+
+
+def _is_developer_username(value, credentials):
+    username = str(value or "").strip()
+    return any(username == developer_id for developer_id, _ in credentials)
 
 
 def _find_login_school(school_input):
@@ -687,7 +702,12 @@ def login():
         if not school_input:
             flash("اكتب اسم المدرسة أو رمزها", "error")
             return render_template("login.html", step="school", school_input="")
-        if _is_developer_username(school_input):
+        try:
+            developer_credentials = _get_developer_credentials()
+        except (requests.RequestException, RuntimeError, ValueError) as error:
+            app.logger.error("تعذر تحميل بيانات المطور عند تسجيل الدخول: %s", error)
+            developer_credentials = []
+        if _is_developer_username(school_input, developer_credentials):
             session["login_developer_mode"] = True
             session["login_developer_username"] = school_input
             session.pop("login_school_id", None)
@@ -744,25 +764,35 @@ def login():
                 "login.html", step="credentials", school_name=school_name,
                 username=username, developer_mode=developer_mode)
 
-        password_hash = _sha256(password)
-        developer_username = next(
+        try:
+            developer_credentials = _get_developer_credentials()
+        except (requests.RequestException, RuntimeError, ValueError) as error:
+            app.logger.error("تعذر التحقق من بيانات المطور: %s", error)
+            if developer_mode:
+                flash("تعذر تحميل بيانات المطور المحدثة. حاول مرة أخرى لاحقاً.", "error")
+                return render_template(
+                    "login.html", step="credentials", school_name="",
+                    username=username, developer_mode=True)
+            developer_credentials = []
+
+        if developer_mode and not developer_credentials:
+            flash("بيانات المطور غير محفوظة على السحابة. افتح النظام الأساسي واتصل بالمزامنة.", "error")
+            return render_template(
+                "login.html", step="credentials", school_name="",
+                username=username, developer_mode=True)
+
+        matched_developer_id = next(
             (
                 developer_id
-                for developer_id in (DEVELOPER_ID, DEVELOPER_ID_LEGACY)
-                if username.casefold() == developer_id.casefold()
+                for developer_id, expected_hash in developer_credentials
+                if username == developer_id
+                and hmac.compare_digest(_sha256(password), expected_hash)
             ),
             None,
         )
-        is_developer = (
-            (developer_username == DEVELOPER_ID and password_hash == DEVELOPER_HASH)
-            or (
-                developer_username == DEVELOPER_ID_LEGACY
-                and password_hash == DEVELOPER_HASH_LEGACY
-            )
-        )
-        if is_developer:
+        if matched_developer_id:
             session.clear()
-            session["username"] = developer_username
+            session["username"] = matched_developer_id
             session["role"] = "admin"
             session["is_developer"] = True
             flash("مرحباً أيها المطور", "success")
