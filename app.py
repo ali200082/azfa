@@ -15,6 +15,7 @@ import os
 import hashlib
 import hmac
 import base64
+from urllib.parse import quote, urlparse
 from functools import wraps
 from datetime import datetime
 
@@ -847,6 +848,14 @@ def login():
             assigned_groups = user_info.get("assigned_groups", [])
             session["assigned_groups"] = (
                 list(assigned_groups) if isinstance(assigned_groups, list) else [])
+            session["is_supervisor"] = bool(user_info.get("is_supervisor", False))
+            session["teacher_code"] = str(user_info.get("teacher_code", "") or "")
+            session["teacher_name"] = str(
+                user_info.get("teacher_name")
+                or user_info.get("full_name")
+                or user_info.get("name")
+                or username
+            )
             flash(f"مرحباً {username} — {school_name}", "success")
             if next_path.startswith("/") and not next_path.startswith("//"):
                 return redirect(next_path)
@@ -1465,6 +1474,328 @@ def _attendance_score(absences):
         return max(0, 20 - (int(float(absences or 0)) // 2))
     except (TypeError, ValueError):
         return 20
+
+
+def _teacher_usage_path(school_id, username):
+    safe_username = "".join(
+        char for char in str(username or "") if char not in ".$#[]/"
+    ).strip()
+    if not safe_username:
+        raise ValueError("اسم حساب الأستاذ غير صالح لمسار السحابة")
+    return f"schools/{school_id}/teacher_usage/{quote(safe_username, safe='')}"
+
+
+def _load_teacher_usage(school_id, username):
+    data = _firebase_json_required(_teacher_usage_path(school_id, username))
+    if data is None:
+        return {
+            "logins": [],
+            "attendance_actions": [],
+            "lecture_attendance": [],
+        }
+    if not isinstance(data, dict):
+        raise RuntimeError("صيغة سجل الأستاذ غير صالحة")
+    for field in ("logins", "attendance_actions", "lecture_attendance"):
+        if not isinstance(data.get(field), list):
+            data[field] = []
+    return data
+
+
+def _save_teacher_usage(school_id, username, payload):
+    response = _fb_request(
+        "PUT", _teacher_usage_path(school_id, username), json=payload)
+    if response is None or not response.ok:
+        status = response.status_code if response is not None else "unavailable"
+        raise RuntimeError(f"تعذر حفظ سجل الأستاذ ({status})")
+
+
+def _valid_meet_url(value):
+    parsed = urlparse(str(value or "").strip())
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc.casefold() == "meet.google.com"
+        and bool(parsed.path.strip("/"))
+    )
+
+
+def _load_teacher_lecture_records(school_id=None, all_schools=False):
+    if all_schools:
+        schools_response = _fb_request(
+            "GET", "schools", params={"shallow": "true"})
+        if schools_response is None or not schools_response.ok:
+            raise RuntimeError("تعذر تحميل قائمة المدارس")
+        school_keys = schools_response.json()
+        if school_keys is None:
+            return []
+        if not isinstance(school_keys, dict):
+            raise RuntimeError("صيغة قائمة المدارس غير صالحة")
+        school_ids = list(school_keys)
+    else:
+        school_ids = [str(school_id or "").strip()]
+
+    records = []
+    for sid in school_ids:
+        if not sid:
+            continue
+        school_info = _firebase_json_required(f"schools/{sid}/school_name")
+        school_name = str(school_info or sid)
+        usage_data = _firebase_json_required(f"schools/{sid}/teacher_usage")
+        if usage_data is None:
+            continue
+        if not isinstance(usage_data, dict):
+            raise RuntimeError(f"صيغة سجل حضور الأساتذة غير صالحة في المدرسة {sid}")
+        for bucket_username, payload in usage_data.items():
+            if not isinstance(payload, dict):
+                continue
+            lectures = payload.get("lecture_attendance", [])
+            if not isinstance(lectures, list):
+                continue
+            for lecture in lectures:
+                if not isinstance(lecture, dict):
+                    continue
+                item = dict(lecture)
+                item["username"] = str(
+                    item.get("username") or bucket_username)
+                item["school_id"] = str(item.get("school_id") or sid)
+                item["school_name"] = school_name
+                records.append(item)
+    return records
+
+
+@app.route("/teacher-attendance", methods=["GET", "POST"])
+@login_required
+def teacher_attendance():
+    is_developer = bool(session.get("is_developer"))
+    role = session.get("role")
+    is_teacher = role == "teacher" and not session.get("is_supervisor")
+    is_manager = role == "admin" or is_developer
+    if not is_teacher and not is_manager:
+        abort(403)
+
+    own_school_id = str(session.get("school_id", "") or "")
+    selected_school_id = (
+        request.values.get("school", "").strip()
+        if is_developer else own_school_id
+    )
+    if not is_developer and not own_school_id:
+        return redirect(url_for("schools_page"))
+    if is_developer and selected_school_id:
+        school_ids = {school["id"] for school in list_schools()}
+        if selected_school_id not in school_ids:
+            abort(404)
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        username = str(session.get("username", "") or "")
+        school_id = (
+            request.form.get("school_id", "").strip()
+            if is_developer else own_school_id
+        )
+        if not school_id:
+            abort(400, description="يجب اختيار مدرسة أولاً")
+        if is_developer and school_id not in {
+            school["id"] for school in list_schools()
+        }:
+            abort(404)
+
+        try:
+            if action == "start":
+                if not is_teacher:
+                    abort(403)
+                teacher_name = request.form.get("teacher_name", "").strip()
+                level = request.form.get("level", "").strip()
+                group = request.form.get("group", "").strip()
+                meet_url = request.form.get("meet_url", "").strip()
+                if not teacher_name or not level or not group:
+                    flash("اسم الأستاذ والمستوى والمجموعة مطلوبة", "error")
+                elif not _valid_meet_url(meet_url):
+                    flash("أدخل رابطًا صالحًا يبدأ بـ https://meet.google.com/", "error")
+                else:
+                    usage = _load_teacher_usage(school_id, username)
+                    lectures = usage["lecture_attendance"]
+                    if any(
+                        isinstance(record, dict)
+                        and str(record.get("username") or username) == username
+                        and not record.get("ended_at")
+                        for record in lectures
+                    ):
+                        flash("لديك محاضرة مفتوحة؛ أنهِها قبل بدء محاضرة أخرى", "error")
+                    else:
+                        record = {
+                            "session_id": uuid.uuid4().hex,
+                            "username": username,
+                            "teacher_code": str(session.get("teacher_code", "") or ""),
+                            "teacher_name": teacher_name,
+                            "level": level,
+                            "group": group,
+                            "meet_url": meet_url,
+                            "started_at": datetime.now().isoformat(timespec="seconds"),
+                            "ended_at": "",
+                            "school_id": school_id,
+                        }
+                        lectures.append(record)
+                        usage.update({
+                            "lecture_attendance": lectures,
+                            "last_updated": datetime.now().isoformat(),
+                            "school_id": school_id,
+                            "username": username,
+                        })
+                        _save_teacher_usage(school_id, username, usage)
+                        flash("بدأت المحاضرة وسُجّل وقت البدء", "success")
+            elif action == "end":
+                if not is_teacher:
+                    abort(403)
+                usage = _load_teacher_usage(school_id, username)
+                session_id = request.form.get("session_id", "").strip()
+                record = next(
+                    (
+                        item for item in usage["lecture_attendance"]
+                        if isinstance(item, dict)
+                        and str(item.get("session_id", "")) == session_id
+                        and str(item.get("username") or username) == username
+                    ),
+                    None,
+                )
+                if not record or record.get("ended_at"):
+                    flash("لم يتم العثور على محاضرة مفتوحة لإنهائها", "error")
+                else:
+                    record["ended_at"] = datetime.now().isoformat(timespec="seconds")
+                    usage["last_updated"] = datetime.now().isoformat()
+                    _save_teacher_usage(school_id, username, usage)
+                    flash("تم تسجيل وقت انتهاء المحاضرة", "success")
+            elif action in {"edit", "delete"}:
+                if not is_manager:
+                    abort(403)
+                record_username = request.form.get("username", "").strip()
+                session_id = request.form.get("session_id", "").strip()
+                if not record_username or not session_id:
+                    abort(400, description="بيانات سجل المحاضرة غير مكتملة")
+                usage = _load_teacher_usage(school_id, record_username)
+                record = next(
+                    (
+                        item for item in usage["lecture_attendance"]
+                        if isinstance(item, dict)
+                        and str(item.get("session_id", "")) == session_id
+                    ),
+                    None,
+                )
+                if not record:
+                    flash("لم يتم العثور على سجل المحاضرة", "error")
+                elif action == "delete":
+                    usage["lecture_attendance"] = [
+                        item for item in usage["lecture_attendance"]
+                        if not (
+                            isinstance(item, dict)
+                            and str(item.get("session_id", "")) == session_id
+                        )
+                    ]
+                    usage["last_updated"] = datetime.now().isoformat()
+                    _save_teacher_usage(school_id, record_username, usage)
+                    flash("تم حذف سجل المحاضرة", "success")
+                else:
+                    teacher_name = request.form.get("teacher_name", "").strip()
+                    level = request.form.get("level", "").strip()
+                    group = request.form.get("group", "").strip()
+                    meet_url = request.form.get("meet_url", "").strip()
+                    started_text = request.form.get("started_at", "").strip()
+                    ended_text = request.form.get("ended_at", "").strip()
+                    try:
+                        started = datetime.fromisoformat(started_text)
+                        ended = datetime.fromisoformat(ended_text) if ended_text else None
+                    except ValueError:
+                        flash("صيغة تاريخ أو وقت المحاضرة غير صحيحة", "error")
+                    else:
+                        if not teacher_name or not level:
+                            flash("اسم الأستاذ والمستوى مطلوبان", "error")
+                        elif meet_url and not _valid_meet_url(meet_url):
+                            flash("رابط Google Meet غير صالح", "error")
+                        elif ended and ended < started:
+                            flash("وقت الانتهاء يجب أن يكون بعد وقت البدء", "error")
+                        else:
+                            record.update({
+                                "teacher_name": teacher_name,
+                                "level": level,
+                                "group": group,
+                                "meet_url": meet_url,
+                                "started_at": started.isoformat(timespec="seconds"),
+                                "ended_at": ended.isoformat(timespec="seconds") if ended else "",
+                                "school_id": school_id,
+                            })
+                            usage["last_updated"] = datetime.now().isoformat()
+                            _save_teacher_usage(school_id, record_username, usage)
+                            flash("تم تحديث سجل المحاضرة", "success")
+            else:
+                abort(400, description="إجراء غير صالح")
+        except (requests.RequestException, RuntimeError, ValueError) as error:
+            app.logger.error("تعذر تحديث سجل حضور الأساتذة: %s", error)
+            flash("تعذر حفظ بيانات المحاضرة على الخادم. حاول مرة أخرى.", "error")
+
+        return redirect(url_for(
+            "teacher_attendance",
+            **({"school": school_id} if is_developer else {}),
+        ))
+
+    try:
+        records = _load_teacher_lecture_records(
+            school_id=selected_school_id,
+            all_schools=is_developer and not selected_school_id,
+        )
+    except (requests.RequestException, RuntimeError, ValueError) as error:
+        app.logger.error("تعذر تحميل سجل حضور الأساتذة: %s", error)
+        abort(503, description="تعذر تحميل سجل حضور الأساتذة من الخادم")
+
+    username = str(session.get("username", "") or "")
+    if is_teacher:
+        records = [
+            record for record in records
+            if record.get("username") == username
+        ]
+    query = request.args.get("q", "").strip().casefold()
+    record_date = request.args.get("date", "").strip()
+    if query:
+        records = [
+            record for record in records
+            if query in str(record.get("teacher_name", "")).casefold()
+            or query in str(record.get("username", "")).casefold()
+            or query in str(record.get("teacher_code", "")).casefold()
+        ]
+    if record_date:
+        records = [
+            record for record in records
+            if str(record.get("started_at", ""))[:10] == record_date
+        ]
+    records.sort(key=lambda item: str(item.get("started_at", "")), reverse=True)
+
+    for record in records:
+        started_text = str(record.get("started_at", "") or "")
+        ended_text = str(record.get("ended_at", "") or "")
+        try:
+            record["_started_input"] = datetime.fromisoformat(
+                started_text.replace("Z", "+00:00")
+            ).strftime("%Y-%m-%dT%H:%M")
+        except ValueError:
+            record["_started_input"] = ""
+        try:
+            record["_ended_input"] = datetime.fromisoformat(
+                ended_text.replace("Z", "+00:00")
+            ).strftime("%Y-%m-%dT%H:%M")
+        except ValueError:
+            record["_ended_input"] = ""
+
+    schools = list_schools() if is_developer else []
+    return render_template(
+        "teacher_attendance.html",
+        records=records,
+        is_teacher=is_teacher,
+        is_manager=is_manager,
+        is_developer=is_developer,
+        schools=schools,
+        selected_school_id=selected_school_id,
+        teacher_name=session.get("teacher_name", username),
+        teacher_code=session.get("teacher_code", ""),
+        q=request.args.get("q", ""),
+        record_date=record_date,
+    )
 
 
 @app.route("/attendance", methods=["GET", "POST"])

@@ -409,6 +409,140 @@ class CourseWebTests(unittest.TestCase):
             self.assertIn("ناجح", passing_row, route)
             self.assertIn("راسب", failing_row, route)
 
+    def test_teacher_can_start_and_end_lecture_and_preserves_usage_history(self):
+        username = "teacher1"
+        self.firebase.data["schools"]["S1"]["teacher_usage"] = {
+            username: {
+                "logins": [{"timestamp": "2026-10-01 09:00:00"}],
+                "attendance_actions": [{"event_id": "event-1"}],
+                "lecture_attendance": [],
+            }
+        }
+        with self.client.session_transaction() as current_session:
+            current_session["username"] = username
+            current_session["role"] = "teacher"
+            current_session["teacher_code"] = "T-001"
+            current_session["teacher_name"] = "أستاذ الاختبار"
+            current_session["is_supervisor"] = False
+
+        response = self.client.post(
+            "/teacher-attendance",
+            data={
+                "action": "start",
+                "teacher_name": "أستاذ الاختبار",
+                "level": "اول",
+                "group": "A",
+                "meet_url": "https://meet.google.com/abc-defg-hij",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        payload = self.firebase.data["schools"]["S1"]["teacher_usage"][username]
+        self.assertEqual(len(payload["lecture_attendance"]), 1)
+        self.assertEqual(payload["logins"], [{"timestamp": "2026-10-01 09:00:00"}])
+        self.assertEqual(payload["attendance_actions"], [{"event_id": "event-1"}])
+        lecture = payload["lecture_attendance"][0]
+        self.assertEqual(lecture["teacher_code"], "T-001")
+        self.assertEqual(lecture["school_id"], "S1")
+        self.assertEqual(lecture["level"], "اول")
+        self.assertFalse(lecture["ended_at"])
+
+        response = self.client.get("/teacher-attendance")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("abc-defg-hij".encode(), response.data)
+        self.assertNotIn("اسم المستخدم".encode(), response.data)
+
+        response = self.client.post(
+            "/teacher-attendance",
+            data={"action": "end", "session_id": lecture["session_id"]},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            self.firebase.data["schools"]["S1"]["teacher_usage"][username]
+            ["lecture_attendance"][0]["ended_at"]
+        )
+
+    def test_teacher_lecture_start_rejects_invalid_meet_url(self):
+        with self.client.session_transaction() as current_session:
+            current_session["username"] = "teacher1"
+            current_session["role"] = "teacher"
+            current_session["is_supervisor"] = False
+
+        response = self.client.post(
+            "/teacher-attendance",
+            data={
+                "action": "start",
+                "teacher_name": "أستاذ الاختبار",
+                "level": "اول",
+                "group": "A",
+                "meet_url": "https://example.com/not-meet",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn(
+            "teacher_usage",
+            self.firebase.data["schools"]["S1"],
+        )
+
+    def test_manager_can_review_edit_and_delete_lecture_records(self):
+        self.firebase.data["schools"]["S1"]["teacher_usage"] = {
+            "teacher1": {
+                "logins": [{"timestamp": "2026-10-01 09:00:00"}],
+                "attendance_actions": [],
+                "lecture_attendance": [{
+                    "session_id": "lecture-1",
+                    "username": "teacher1",
+                    "teacher_code": "T-001",
+                    "teacher_name": "أستاذ قديم",
+                    "level": "اول",
+                    "group": "A",
+                    "meet_url": "https://meet.google.com/abc-defg-hij",
+                    "started_at": "2026-10-13T09:00:00",
+                    "ended_at": "2026-10-13T10:00:00",
+                    "school_id": "S1",
+                }],
+            }
+        }
+
+        response = self.client.get("/teacher-attendance")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("أستاذ قديم".encode(), response.data)
+        self.assertIn("تعديل".encode(), response.data)
+
+        response = self.client.post(
+            "/teacher-attendance",
+            data={
+                "action": "edit",
+                "school_id": "S1",
+                "username": "teacher1",
+                "session_id": "lecture-1",
+                "teacher_name": "أستاذ محدث",
+                "level": "ثاني",
+                "group": "B",
+                "meet_url": "https://meet.google.com/abc-defg-hij",
+                "started_at": "2026-10-13T09:15",
+                "ended_at": "2026-10-13T10:15",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        payload = self.firebase.data["schools"]["S1"]["teacher_usage"]["teacher1"]
+        self.assertEqual(payload["logins"], [{"timestamp": "2026-10-01 09:00:00"}])
+        self.assertEqual(payload["lecture_attendance"][0]["teacher_name"], "أستاذ محدث")
+        self.assertEqual(payload["lecture_attendance"][0]["level"], "ثاني")
+
+        response = self.client.post(
+            "/teacher-attendance",
+            data={
+                "action": "delete",
+                "school_id": "S1",
+                "username": "teacher1",
+                "session_id": "lecture-1",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        payload = self.firebase.data["schools"]["S1"]["teacher_usage"]["teacher1"]
+        self.assertEqual(payload["lecture_attendance"], [])
+
     def test_teacher_cannot_manage_courses_or_select_unassigned_course(self):
         school = self.firebase.data["schools"]["S1"]
         school["courses"]["assigned"] = {

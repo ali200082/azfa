@@ -58,6 +58,9 @@
         <a href="{{ url_for('courses_page') }}" class="menu-item{% if request.endpoint in ('courses_page', 'select_course', 'clear_active_course') %} active{% endif %}">🗂️ <span>الدورات والتسجيلات</span></a>
         <a href="{{ url_for('attendance_page') }}" class="menu-item{% if request.endpoint == 'attendance_page' %} active{% endif %}">✅ <span>{{ t('attendance') }}</span></a>
         <a href="{{ url_for('grades_page') }}" class="menu-item{% if request.endpoint == 'grades_page' %} active{% endif %}">📊 <span>{{ t('grades') }}</span></a>
+        {% if current_role == 'admin' or (current_role == 'teacher' and not session.get('is_supervisor')) or is_developer %}
+          <a href="{{ url_for('teacher_attendance') }}" class="menu-item{% if request.endpoint == 'teacher_attendance' %} active{% endif %}">👨‍🏫 <span>حضور الأساتذة</span></a>
+        {% endif %}
         <a href="{{ url_for('reports_page') }}" class="menu-item{% if request.endpoint in ('reports_page', 'reports_export', 'student_report', 'final_grades', 'statistics_report', 'absence_report') %} active{% endif %}">📄 <span>{{ t('reports') }}</span></a>
         <a href="{{ url_for('exam_halls') }}" class="menu-item{% if request.endpoint == 'exam_halls' %} active{% endif %}">🏛️ <span>{{ t('exam_halls') }}</span></a>
         {% if current_role == 'admin' or is_developer %}
@@ -69,6 +72,9 @@
       <a href="{{ url_for('support_page') }}" class="menu-item{% if request.endpoint == 'support_page' %} active{% endif %}">📞 <span>{{ t('support') }}</span></a>
       {% if is_developer %}
         <hr>
+        {% if not current_school %}
+          <a href="{{ url_for('teacher_attendance') }}" class="menu-item dev">👨‍🏫 <span>حضور الأساتذة</span></a>
+        {% endif %}
         <a href="{{ url_for('dev_dashboard') }}" class="menu-item dev">🌐 <span>{{ t('dev_panel') }}</span></a>
         <a href="{{ url_for('dev_users') }}" class="menu-item dev">🔐 <span>كلمات المرور</span></a>
         <a href="{{ url_for('dev_demo') }}" class="menu-item dev">🔗 <span>رابط الديمو</span></a>

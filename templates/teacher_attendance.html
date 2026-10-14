@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}حضور الأساتذة{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>👨‍🏫 {% if is_teacher %}حضور المحاضرات{% else %}حضور الأساتذة{% endif %}</h1>
+  <button type="button" class="btn-primary" onclick="window.print()">🖨️ طباعة التقرير</button>
+</div>
+
+{% if is_teacher %}
+<section class="card">
+  <h3>بدء تسجيل محاضرة</h3>
+  <p class="hint">يسجل النظام أوقات البدء والانتهاء يدويًا، ولا يقرأ دخول المشاركين أو خروجهم من Google Meet.</p>
+  <form method="post" class="form-row">
+    <input type="hidden" name="action" value="start">
+    <input type="hidden" name="school_id" value="{{ session.get('school_id', '') }}">
+    <label>اسم الأستاذ الكامل
+      <input name="teacher_name" value="{{ teacher_name }}" required>
+    </label>
+    <label>كود الأستاذ
+      <input value="{{ teacher_code or '—' }}" readonly>
+    </label>
+    <label>المستوى
+      <input name="level" required>
+    </label>
+    <label>المجموعة
+      <input name="group" required>
+    </label>
+    <label style="flex:2">رابط Google Meet
+      <input name="meet_url" type="url" placeholder="https://meet.google.com/..." required>
+    </label>
+    <button class="btn-primary">بدء المحاضرة وتسجيل الوقت</button>
+  </form>
+</section>
+{% endif %}
+
+<form method="get" class="filters card">
+  {% if is_developer %}
+  <select name="school">
+    <option value="">كل المدارس</option>
+    {% for school in schools %}
+      <option value="{{ school.id }}" {% if school.id == selected_school_id %}selected{% endif %}>{{ school.name }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+  {% if is_manager %}<input type="search" name="q" value="{{ q }}" placeholder="ابحث باسم الأستاذ أو المستخدم أو الكود">{% endif %}
+  <label>التاريخ <input type="date" name="date" value="{{ record_date }}"></label>
+  <button class="btn-primary">عرض</button>
+  {% if q or record_date or selected_school_id %}<a class="btn-link" href="{{ url_for('teacher_attendance') }}">مسح الفلاتر</a>{% endif %}
+</form>
+
+<div class="card">
+  <h3>سجل المحاضرات ({{ records|length }})</h3>
+  {% if records %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% if is_manager %}<th>الأستاذ</th><th>اسم المستخدم</th><th>المدرسة</th>{% endif %}
+          <th>كود الأستاذ</th><th>المستوى</th><th>المجموعة</th>
+          <th>رابط الاجتماع</th><th>وقت البدء</th><th>وقت الانتهاء</th>
+          {% if is_teacher or is_manager %}<th>الحالة</th>{% endif %}
+          {% if is_manager %}<th>إدارة السجل</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+      {% for record in records %}
+        <tr>
+          {% if is_manager %}
+            <td>{{ record.get('teacher_name') or record.get('username', '') }}</td>
+            <td>{{ record.get('username', '') }}</td>
+            <td>{{ record.get('school_name') or record.get('school_id', '') }}</td>
+          {% endif %}
+          <td>{{ record.get('teacher_code') or '—' }}</td>
+          <td>{{ record.get('level', '') }}</td>
+          <td>{{ record.get('group', '') }}</td>
+          <td>
+            {% if record.get('meet_url') %}
+              <a href="{{ record.meet_url }}" target="_blank" rel="noopener noreferrer">فتح Meet</a>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ record.get('started_at', '')|replace('T', ' ')|replace('Z', '') }}</td>
+          <td>{{ record.get('ended_at', '')|replace('T', ' ')|replace('Z', '') or 'قيد المحاضرة' }}</td>
+          {% if is_teacher %}
+          <td>
+            {% if not record.get('ended_at') %}
+            <form method="post">
+              <input type="hidden" name="action" value="end">
+              <input type="hidden" name="school_id" value="{{ session.get('school_id', '') }}">
+              <input type="hidden" name="session_id" value="{{ record.get('session_id', '') }}">
+              <button class="btn-danger">إنهاء المحاضرة</button>
+            </form>
+            {% else %}منتهية{% endif %}
+          </td>
+          {% elif is_manager %}
+          <td>{% if record.get('ended_at') %}منتهية{% else %}قيد المحاضرة{% endif %}</td>
+          {% endif %}
+          {% if is_manager %}
+          <td>
+            <details>
+              <summary class="btn-link">تعديل</summary>
+              <form method="post" class="form-row">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="school_id" value="{{ record.get('school_id', '') }}">
+                <input type="hidden" name="username" value="{{ record.get('username', '') }}">
+                <input type="hidden" name="session_id" value="{{ record.get('session_id', '') }}">
+                <label>اسم الأستاذ<input name="teacher_name" value="{{ record.get('teacher_name') or record.get('username', '') }}" required></label>
+                <label>المستوى<input name="level" value="{{ record.get('level', '') }}" required></label>
+                <label>المجموعة<input name="group" value="{{ record.get('group', '') }}"></label>
+                <label>الرابط<input name="meet_url" type="url" value="{{ record.get('meet_url', '') }}"></label>
+                <label>البدء<input name="started_at" type="datetime-local" value="{{ record.get('_started_input', '') }}" required></label>
+                <label>الانتهاء<input name="ended_at" type="datetime-local" value="{{ record.get('_ended_input', '') }}"></label>
+                <button class="btn-primary">حفظ التعديل</button>
+              </form>
+            </details>
+            <form method="post" onsubmit="return confirm('هل تريد حذف سجل المحاضرة؟');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="school_id" value="{{ record.get('school_id', '') }}">
+              <input type="hidden" name="username" value="{{ record.get('username', '') }}">
+              <input type="hidden" name="session_id" value="{{ record.get('session_id', '') }}">
+              <button class="btn-danger">حذف</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="empty">لا توجد محاضرات مسجلة حسب الفلاتر المحددة.</p>
+  {% endif %}
+</div>
+{% endblock %}
